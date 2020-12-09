@@ -64,9 +64,15 @@ check_missing_packages () {
   else
     check_packages+=('libtoolize') # the rest of the world
   fi
+  if [[ $OSTYPE == linux* ]]; then
+    check_packages_native+=('libv4l-dev' 'libxcb-shm0-dev' 'libxcb-shape0-dev' 'libxcb-xfixes0-dev')
+  fi
   # Use hash to check if the packages exist or not. Type is a bash builtin which I'm told behaves differently between different versions of bash.
   for package in "${check_packages[@]}"; do
     hash "$package" &> /dev/null || missing_packages=("$package" "${missing_packages[@]}")
+  done
+  for package in "${check_packages_native[@]}"; do
+    dpkg -S "$package" &> /dev/null || missing_packages_native=("$package" "${missing_packages_native[@]}")
   done
   if [ "${VENDOR}" = "redhat" ] || [ "${VENDOR}" = "centos" ]; then
     if [ -n "$(hash cmake 2>&1)" ] && [ -n "$(hash cmake3 2>&1)" ]; then missing_packages=('cmake' "${missing_packages[@]}"); fi
@@ -78,8 +84,8 @@ check_missing_packages () {
     determine_distro
     if [[ $DISTRO == "Ubuntu" ]]; then
       echo "for ubuntu:"
-      echo "$ sudo apt-get update"
-      echo -n " $ sudo apt-get install subversion ragel curl texinfo g++ bison flex cvs yasm automake libtool autoconf gcc cmake git make pkg-config zlib1g-dev mercurial unzip pax nasm gperf autogen bzip2 autoconf-archive p7zip-full meson clang"
+      echo "sudo apt-get update"
+      echo -n "sudo apt-get install ${missing_packages[@]}"
       if at_least_required_version "18.04" "$(lsb_release -rs)"; then
         echo -n " python3-distutils" # guess it's no longer built-in, lensfun requires it...
       fi
@@ -97,7 +103,26 @@ check_missing_packages () {
     fi
     exit 1
   fi
+  if [[ -n "${missing_packages_native[@]}" ]]; then
+    echo "Could not find the following execs (svn is actually package subversion, makeinfo is actually package texinfo, hg is actually package mercurial if you're missing them): ${missing_packages_native[*]}"
+    echo 'Install the missing packages before running this script.'
+    determine_distro
+    if [[ $DISTRO == "Ubuntu" ]]; then
+      echo "for ubuntu:"
+      echo "sudo apt-get update"
+      echo -n "sudo apt-get install ${missing_packages_native[@]}"
+      echo " -y"
+    else
+      echo "for OS X (homebrew): brew install ragel wget cvs hg yasm autogen automake autoconf cmake libtool xz pkg-config nasm bzip2 autoconf-archive p7zip coreutils meson llvm" # if edit this edit docker/Dockerfile also :|
+      echo "   and set llvm to your PATH if on catalina"
+      echo "for debian: same as ubuntu, but also add libtool-bin, ed"
+      echo "for RHEL/CentOS: First ensure you have epel repo available, then run $ sudo yum install ragel subversion texinfo mercurial libtool autogen gperf nasm patch unzip pax ed gcc-c++ bison flex yasm automake autoconf gcc zlib-devel cvs bzip2 cmake3 -y"
+      echo "for fedora: if your distribution comes with a modern version of cmake then use the same as RHEL/CentOS but replace cmake3 with cmake."
+      echo "for linux native compiler option: same as <your OS> above, also add libva-dev"
+    fi
+    exit 1
 
+  fi
   export REQUIRED_CMAKE_VERSION="3.0.0"
   for cmake_binary in 'cmake' 'cmake3'; do
     # We need to check both binaries the same way because the check for installed packages will work if *only* cmake3 is installed or
@@ -160,10 +185,9 @@ check_missing_packages () {
       then try again"
       exit 1
     fi
-    export MINIMUM_KERNEL_VERSION = "4.19.128"
+    export MINIMUM_KERNEL_VERSION="4.19.128"
     KERNVER=$(uname -a | awk -F'[ ]' '{ print $3 }' | awk -F- '{ print $1 }')
-    
-    if [ $KERNVER != $MINIMUM_KERNEL_VERSION ]; then
+    if ! at_least_required_version "$MINIMUM_KERNEL_VERSION" "$KERNVER"; then
       echo "Windows Subsystem for Linux (WSL) detected - kernel not at minumum version required: $MINIMUM_KERNEL_VERSION 
       Please update via windows update then try again"        
       exit 1
@@ -226,7 +250,7 @@ The resultant binary may not be distributable, but can be useful for in-house us
 }
 
 pick_compiler_flavors() {
-  while [[ "$compiler_flavors" != [1-5] ]]; do
+  while [[ "$compiler_flavors" != [1-6] ]]; do
     if [[ -n "${unknown_opts[@]}" ]]; then
       echo -n 'Unknown option(s)'
       for unknown_opt in "${unknown_opts[@]}"; do
@@ -235,22 +259,24 @@ pick_compiler_flavors() {
       echo ', ignored.'; echo
     fi
     cat <<'EOF'
-What version of MinGW-w64 would you like to build or update?
-  1. Both Win32 and Win64
-  2. Win32 (32-bit only)
-  3. Win64 (64-bit only)
-  4. Local native
-  5. Exit
+What distribution of ffmpeg would you like to build or update?
+  1. Gyan Essentials
+  2. Gyan Full
+  3. BtbN
+  4. Original Script
+  5. Local native
+  6. Exit
 EOF
-    echo -n 'Input your choice [1-5]: '
+    echo -n 'Input your choice [1-6]: '
     read compiler_flavors
   done
   case "$compiler_flavors" in
-  1 ) compiler_flavors=multi ;;
-  2 ) compiler_flavors=win32 ;;
-  3 ) compiler_flavors=win64 ;;
-  4 ) compiler_flavors=native ;;
-  5 ) echo "exiting"; exit 0 ;;
+  1 ) compiler_flavors=gyan_essentials ;;
+  2 ) compiler_flavors=gyan_full ;;
+  3 ) compiler_flavors=btbn ;;
+  4 ) compiler_flavors=win64 ;;
+  5 ) compiler_flavors=native ;;
+  6 ) echo "exiting"; exit 0 ;;
   * ) clear;  echo 'Your choice was not valid, please try again.'; echo ;;
   esac
 }
@@ -264,73 +290,74 @@ download_gcc_build_script() {
 }
 
 install_cross_compiler() {
-  local win32_gcc="cross_compilers/mingw-w64-i686/bin/i686-w64-mingw32-gcc"
+  pick_compiler_flavors
+  #local win32_gcc="cross_compilers/mingw-w64-i686/bin/i686-w64-mingw32-gcc"
   local win64_gcc="cross_compilers/mingw-w64-x86_64/bin/x86_64-w64-mingw32-gcc"
-  if [[ -f $win32_gcc && -f $win64_gcc ]]; then
-   echo "MinGW-w64 compilers both already installed, not re-installing..."
-   if [[ -z $compiler_flavors ]]; then
-     echo "selecting multi build (both win32 and win64)...since both cross compilers are present assuming you want both..."
-     compiler_flavors=multi
-   fi
+  if [[ -f $win64_gcc && $compiler_flavors != "native" ]]; then
+   echo "MinGW-w64 compiler already installed, not re-installing..."
    return # early exit they've selected at least some kind by this point...
-  fi
-
-  if [[ -z $compiler_flavors ]]; then
-    pick_compiler_flavors
-  fi
-  if [[ $compiler_flavors == "native" ]]; then
+  elif [[ $compiler_flavors == "native" ]]; then
     echo "native build, not building any cross compilers..."
     return
+  else
+    mkdir -p cross_compilers
+    cd cross_compilers
+  fi
+  #if [[ $compiler_flavors == "native" ]]; then
+  #  echo "native build, not building any cross compilers..."
+  #  return
+  #fi
+  unset CFLAGS # don't want these "windows target" settings used the compiler itself since it creates executables to run on the local box (we have a parameter allowing them to set them for the script "all builds" basically)
+  # pthreads version to avoid having to use cvs for it
+  echo "Starting to download and build cross compile version of gcc [requires working internet access] with thread count $gcc_cpu_count..."
+  echo ""
+
+  # --disable-shared allows c++ to be distributed at all...which seemed necessary for some random dependency which happens to use/require c++...
+  local zeranoe_script_name=mingw-w64-build-r22.local
+  local zeranoe_script_options="--gcc-ver=10.2.0 --mingw-w64-ver=8.0.0 --default-configure --cpu-count=$gcc_cpu_count --disable-shared --clean-build --verbose --allow-overwrite --threads=winpthreads" # allow-overwrite to avoid some crufty prompts if I do rebuilds [or maybe should just nuke everything...]
+  #if [[ ($compiler_flavors == "win32" || $compiler_flavors == "multi") && ! -f ../$win32_gcc ]]; then
+    #echo "Building win32 cross compiler..."
+    download_gcc_build_script $zeranoe_script_name
+    #if [[ `uname` =~ "5.1" ]]; then # Avoid using secure API functions for compatibility with msvcrt.dll on Windows XP.
+    #  sed -i "s/ --enable-secure-api//" $zeranoe_script_name
+    #fi
+    #nice ./$zeranoe_script_name $zeranoe_script_options --build-type=win32 || exit 1
+    #if [[ ! -f ../$win32_gcc ]]; then
+    #  echo "Failure building 32 bit gcc? Recommend nuke sandbox (rm -rf sandbox) and start over..."
+    #  exit 1
+    #fi
+    #if [[ ! -f  ../cross_compilers/mingw-w64-i686/i686-w64-mingw32/lib/libmingwex.a ]]; then
+	#    echo "failure building mingwex? 32 bit"
+	#    exit 1
+    #fi
+  #fi
+  if [[ ($compiler_flavors == "win64") && ! -f ../$win64_gcc ]]; then
+    echo "Building win64 x86_64 cross compiler..."
+    download_gcc_build_script $zeranoe_script_name
+    nice ./$zeranoe_script_name $zeranoe_script_options --build-type=win64 || exit 1
+    if [[ ! -f ../$win64_gcc ]]; then
+      echo "Failure building 64 bit gcc? Recommend nuke sandbox (rm -rf sandbox) and start over..."
+      exit 1
+    fi
+    if [[ ! -f  ../cross_compilers/mingw-w64-x86_64/x86_64-w64-mingw32/lib/libmingwex.a ]]; then
+	  echo "failure building mingwex? 64 bit"
+	  exit 1
+    fi
   fi
 
-  mkdir -p cross_compilers
-  cd cross_compilers
-
-    unset CFLAGS # don't want these "windows target" settings used the compiler itself since it creates executables to run on the local box (we have a parameter allowing them to set them for the script "all builds" basically)
-    # pthreads version to avoid having to use cvs for it
-    echo "Starting to download and build cross compile version of gcc [requires working internet access] with thread count $gcc_cpu_count..."
-    echo ""
-
-    # --disable-shared allows c++ to be distributed at all...which seemed necessary for some random dependency which happens to use/require c++...
-    local zeranoe_script_name=mingw-w64-build-r22.local
-    local zeranoe_script_options="--gcc-ver=10.2.0 --mingw-w64-ver=8.0.0 --default-configure --cpu-count=$gcc_cpu_count --disable-shared --clean-build --verbose --allow-overwrite --threads=winpthreads" # allow-overwrite to avoid some crufty prompts if I do rebuilds [or maybe should just nuke everything...]
-    if [[ ($compiler_flavors == "win32" || $compiler_flavors == "multi") && ! -f ../$win32_gcc ]]; then
-      echo "Building win32 cross compiler..."
-      download_gcc_build_script $zeranoe_script_name
-      if [[ `uname` =~ "5.1" ]]; then # Avoid using secure API functions for compatibility with msvcrt.dll on Windows XP.
-        sed -i "s/ --enable-secure-api//" $zeranoe_script_name
-      fi
-      nice ./$zeranoe_script_name $zeranoe_script_options --build-type=win32 || exit 1
-      if [[ ! -f ../$win32_gcc ]]; then
-        echo "Failure building 32 bit gcc? Recommend nuke sandbox (rm -rf sandbox) and start over..."
-        exit 1
-      fi
-      if [[ ! -f  ../cross_compilers/mingw-w64-i686/i686-w64-mingw32/lib/libmingwex.a ]]; then
-	      echo "failure building mingwex? 32 bit"
-	      exit 1
-      fi
-    fi
-    if [[ ($compiler_flavors == "win64" || $compiler_flavors == "multi") && ! -f ../$win64_gcc ]]; then
-      echo "Building win64 x86_64 cross compiler..."
-      download_gcc_build_script $zeranoe_script_name
-      nice ./$zeranoe_script_name $zeranoe_script_options --build-type=win64 || exit 1
-      if [[ ! -f ../$win64_gcc ]]; then
-        echo "Failure building 64 bit gcc? Recommend nuke sandbox (rm -rf sandbox) and start over..."
-        exit 1
-      fi
-      if [[ ! -f  ../cross_compilers/mingw-w64-x86_64/x86_64-w64-mingw32/lib/libmingwex.a ]]; then
-	      echo "failure building mingwex? 64 bit"
-	      exit 1
-      fi
-    fi
-
-    # rm -f build.log # leave resultant build log...sometimes useful...
-    reset_cflags
+  # rm -f build.log # leave resultant build log...sometimes useful...
+  reset_cflags
   cd ..
   echo "Done building (or already built) MinGW-w64 cross-compiler(s) successfully..."
-  echo `date` # so they can see how long it took :)
+  d2 = `date` # so they can see how long it took :)
+  datediff $d1 $d2
 }
 
+datediff() {
+    d1=$(date -d "$1" +%s)
+    d2=$(date -d "$2" +%s)
+    echo $(( (d1 - d2) / 86400 )) days
+}
 # helper methods for downloading and building projects that can take generic input
 
 do_svn_checkout() {
@@ -361,6 +388,7 @@ do_git_checkout() {
     to_dir=$(basename $repo_url | sed s/\.git/_git/) # http://y/abc.git -> abc_git
   fi
   local desired_branch="$3"
+  local rebuild_ffmpeg="$4"
   if [ ! -d $to_dir ]; then
     echo "Downloading (via git clone) $to_dir from $repo_url"
     rm -rf $to_dir.tmp # just in case it was interrupted previously...
@@ -372,6 +400,8 @@ do_git_checkout() {
   else
     cd $to_dir
     if [[ $git_get_latest = "y" ]]; then
+      git fetch # want this for later...
+    elif [[ $rebuild_ffmpeg = "y" ]]; then
       git fetch # want this for later...
     else
       echo "not doing git get latest pull for latest code $to_dir" # too slow'ish...
@@ -2305,29 +2335,31 @@ build_ffmpeg() {
   cd $output_dir
     apply_patch file://$patch_dir/frei0r_load-shared-libraries-dynamically.diff
     if [ "$bits_target" != "32" ]; then
-    #SVT-HEVC
-    git apply "../SVT-HEVC_git/ffmpeg_plugin/0001-lavc-svt_hevc-add-libsvt-hevc-encoder-wrapper.patch"
-    #SVT-AV1 only
-    #git apply "../SVT-AV1_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-av1.patch"
-    #SVT-VP9 only
-    #git apply "../SVT-VP9_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-vp9.patch"
-
-    #Add SVT-AV1 to SVT-HEVC
-    #git apply "../SVT-AV1_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-av1-with-svt-hevc.patch"
-    #Add SVT-VP9 to SVT-HEVC & SVT-AV1
-    #git apply "../SVT-VP9_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-vp9-with-svt-hevc-av1.patch"
+      if [ "$BtbN" != "y" ]; then
+        #SVT-HEVC
+        git apply "../SVT-HEVC_git/ffmpeg_plugin/0001-lavc-svt_hevc-add-libsvt-hevc-encoder-wrapper.patch"
+        #SVT-AV1 only
+        #git apply "../SVT-AV1_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-av1.patch"
+        #SVT-VP9 only
+        #git apply "../SVT-VP9_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-vp9.patch"
+        #Add SVT-AV1 to SVT-HEVC
+        #git apply "../SVT-AV1_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-av1-with-svt-hevc.patch"
+        #Add SVT-VP9 to SVT-HEVC & SVT-AV1
+        #git apply "../SVT-VP9_git/ffmpeg_plugin/0001-Add-ability-for-ffmpeg-to-run-svt-vp9-with-svt-hevc-av1.patch"
+        fi
     fi
-    if [ "$bits_target" = "32" ]; then
-      local arch=x86
-    else
-      local arch=x86_64
-    fi
+    #if [ "$bits_target" = "32" ]; then
+    #  local arch=x86
+    #else
+    local arch=x86_64
+    #fi
 
     init_options="--pkg-config=pkg-config --pkg-config-flags=--static --extra-version=ffmpeg-windows-build-helpers --enable-version3 --disable-debug --disable-w32threads"
     if [[ $compiler_flavors != "native" ]]; then
       init_options+=" --arch=$arch --target-os=mingw32 --cross-prefix=$cross_prefix"
     else
-      if [[ $OSTYPE != darwin* ]]; then
+      #if [[ $OSTYPE != darwin* && $build-gyan_full != "y" && $build-gyan_essentails != "y" && $BtbN != "y" ]]; then 
+      if [[ $OSTYPE != darwin* && $compiler_flavors != "native" ]]; then 
         unset PKG_CONFIG_LIBDIR # just use locally packages for all the xcb stuff for now, you need to install them locally first...
         init_options+=" --enable-libv4l2 --enable-libxcb --enable-libxcb-shm --enable-libxcb-xfixes --enable-libxcb-shape "
       fi 
@@ -2336,13 +2368,20 @@ build_ffmpeg() {
       init_options+=" --disable-schannel"
       # Fix WinXP incompatibility by disabling Microsoft's Secure Channel, because Windows XP doesn't support TLS 1.1 and 1.2, but with GnuTLS or OpenSSL it does.  XP compat!
     fi
-    config_options="$init_options --enable-libcaca --enable-gray --enable-libtesseract --enable-fontconfig --enable-gmp --enable-gnutls --enable-libass --enable-libbluray --enable-libbs2b --enable-libflite --enable-libfreetype --enable-libfribidi --enable-libgme --enable-libgsm --enable-libilbc --enable-libmodplug --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libvorbis --enable-libwebp --enable-libzimg --enable-libzvbi --enable-libmysofa --enable-libopenjpeg  --enable-libopenh264 --enable-liblensfun  --enable-libvmaf --enable-libsrt --enable-libaribb24 --enable-demuxer=dash --enable-libxml2 --enable-opengl --enable-libdav1d --enable-avisynth --enable-cuda-llvm"
-
-    if [ "$bits_target" != "32" ]; then
+    if [[ $compiler_flavors != gyan_full && $compiler_flavors != gyan_essentails && $compiler_flavors !=BtbN ]]; then #RDP build
+        config_options="$init_options --enable-libcaca --enable-gray --enable-libtesseract --enable-fontconfig --enable-gmp --enable-gnutls --enable-libass --enable-libbluray --enable-libbs2b --enable-libflite --enable-libfreetype --enable-libfribidi --enable-libgme --enable-libgsm --enable-libilbc --enable-libmodplug --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libvorbis --enable-libwebp --enable-libzimg --enable-libzvbi --enable-libmysofa --enable-libopenjpeg  --enable-libopenh264 --enable-liblensfun  --enable-libvmaf --enable-libsrt --enable-libaribb24 --enable-demuxer=dash --enable-libxml2 --enable-opengl --enable-libdav1d --enable-avisynth --enable-cuda-llvm"
+    elif [[ $compiler_flavors = gyan_essentails || $compiler_flavors = gyan_full ]]; then 
+        config_options="$init_options --enable-libcaca --enable-fontconfig --enable-gmp --enable-libass --enable-libbluray --enable-libbs2b --enable-libflite --enable-libfreetype --enable-libfribidi --enable-libgme --enable-libgsm --enable-libilbc --enable-libmodplug --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libvorbis --enable-libwebp --enable-libzimg --enable-libzvbi --enable-libmysofa --enable-libopenjpeg  --enable-libopenh264 --enable-liblensfun  --enable-libvmaf --enable-libsrt --enable-demuxer=dash --enable-libxml2 --enable-libdav1d --enable-avisynth --enable-cuda-llvm"
+    elif [[ $compiler_flavors = gyan_full ]]; then
+        echo "TBD"
+    elif [[ $compiler_flavors =BtbN ]]; then
+        echo "TBD"
+    fi
+    #if [ "$bits_target" != "32" ]; then
       #SVT-HEVC no longer needs to be disabled to configure with svt-av1, but svt-vp9 still conflicts with svt-av1 so svt-vp9 can only be compiled alone
       #config_options+=" --enable-libsvthevc"
-      echo " not sure how to enable svthevc"
-    fi
+      #echo " not sure how to enable svthevc"
+    #fi
 
     #aom must be disabled to use SVT-AV1
     config_options+=" --enable-libaom"
@@ -2352,8 +2391,8 @@ build_ffmpeg() {
     config_options+=" --enable-libvpx"
     #config_options+=" --enable-libsvtvp9" #not currently working but compiles if configured
 
-    if [[ $compiler_flavors != "native" ]]; then
-      config_options+=" --enable-nvenc --enable-nvdec" # don't work OS X 
+    if [[ $OSTYPE != darwin* ]]; then
+      config_options+=" --enable-nvenc --enable-nvdec " # don't work OS X 
     fi
 
     config_options+=" --extra-libs=-lharfbuzz" #  grr...needed for pre x264 build???
@@ -2367,7 +2406,7 @@ build_ffmpeg() {
       config_options+=" --enable-amf" # This is actually autodetected but for consistency.. we might as well set it.
     fi
 
-    if [[ $build_intel_qsv = y && $compiler_flavors != "native" ]]; then # Broken for native builds right now: https://github.com/lu-zero/mfx_dispatch/issues/71
+    if [[ $build_intel_qsv = y && $OSTYPE != darwin* ]]; then # Broken for native builds right now: https://github.com/lu-zero/mfx_dispatch/issues/71
       config_options+=" --enable-libmfx"
     else
       config_options+=" --disable-libmfx"
@@ -2378,7 +2417,7 @@ build_ffmpeg() {
       if [[ $host_target != 'i686-w64-mingw32' ]]; then
         config_options+=" --enable-libxavs2"
       fi
-      if [[ $compiler_flavors != "native" ]]; then
+      if [[ $OSTYPE != darwin* ]]; then
         config_options+=" --enable-libxavs" # don't compile OS X 
       fi
     fi
@@ -2389,7 +2428,7 @@ build_ffmpeg() {
     fi 
     # other possibilities:
     #   --enable-w32threads # [worse UDP than pthreads, so not using that]
-    config_options+=" --enable-avresample" # guess this is some kind of libav specific thing (the FFmpeg fork) but L-Smash needs it so why not always build it :)
+    #config_options+=" --enable-avresample" # guess this is some kind of libav specific thing (the FFmpeg fork) but L-Smash needs it so why not always build it :)
 
     for i in $CFLAGS; do
       config_options+=" --extra-cflags=$i" # --extra-cflags may not be needed here, but adds it to the final console output which I like for debugging purposes
@@ -2521,9 +2560,8 @@ build_ffmpeg_dependencies() {
   echo "Building ffmpeg dependency libraries..." 
   if [[ $compiler_flavors != "native" ]]; then # build some stuff that don't build native...
     build_dlfcn
-    build_libxavs
   fi
-
+  build_libxavs
   build_libdavs2
   if [[ $host_target != 'i686-w64-mingw32' ]]; then
     build_libxavs2
@@ -2540,7 +2578,7 @@ build_ffmpeg_dependencies() {
   if [[ $build_amd_amf = y ]]; then
     build_amd_amf_headers
   fi
-  if [[ $build_intel_qsv = y && $compiler_flavors != "native" ]]; then # Broken for native builds right now: https://github.com/lu-zero/mfx_dispatch/issues/71
+  if [[ $build_intel_qsv = y && $OSTYPE != darwin* ]]; then # Broken for native builds right now: https://github.com/lu-zero/mfx_dispatch/issues/71
     build_intel_quicksync_mfx
   fi
   build_nv_headers
@@ -2651,6 +2689,7 @@ build_apps() {
 }
 
 # set some parameters initial values
+d1=`date`
 top_dir="$(pwd)"
 cur_dir="$(pwd)/sandbox"
 patch_dir="$(pwd)/patches"
@@ -2687,7 +2726,7 @@ build_mplayer=n
 build_vlc=n
 build_lsw=n # To build x264 with L-Smash-Works.
 build_dependencies=y
-git_get_latest=y
+git_get_latest=n
 prefer_stable=y # Only for x264 and x265.
 build_intel_qsv=y # note: not windows xp friendly!
 build_amd_amf=y
@@ -2709,11 +2748,13 @@ original_cppflags='-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0' # Needed for mingw-w64
 #  original_cflags='-mtune=generic -O2'
 #fi
 ffmpeg_git_checkout_version=
+ffmpeg_rebuild=y
 build_ismindex=n
 enable_gpl=y
 build_x264_with_libav=n # To build x264 with Libavformat.
 ffmpeg_git_checkout="https://github.com/FFmpeg/FFmpeg.git"
 ffmpeg_source_dir=
+rebuild_compiler=n
 
 # parse command line parameters, if any
 while true; do
@@ -2726,7 +2767,6 @@ while true; do
       --ffmpeg-source-dir=[default empty] specifiy the directory of ffmpeg source code. When specified, git will not be used.
       --gcc-cpu-count=[number of cpu cores set it higher than 1 if you have multiple cores and > 1GB RAM, this speeds up initial cross compiler build. FFmpeg build uses number of cores no matter what]
       --disable-nonfree=y (set to n to include nonfree like libfdk-aac,decklink)
-      --build-intel-qsv=y (set to y to include the [non windows xp compat.] qsv library and ffmpeg module. NB this not not hevc_qsv...
       --sandbox-ok=n [skip sandbox prompt if y]
       -d [meaning \"defaults\" skip all prompts, just build ffmpeg static with some reasonable defaults like no git updates]
       --build-libmxf=n [builds libMXF, libMXF++, writeavidmxfi.exe and writeaviddv50.exe from the BBC-Ingex project]
@@ -2737,7 +2777,7 @@ while true; do
       --build-ismindex=n [builds ffmpeg utility ismindex.exe]
       -a 'build all' builds ffmpeg, mplayer, vlc, etc. with all fixings turned on
       --build-dvbtee=n [build dvbtee.exe a DVB profiler]
-      --compiler-flavors=[multi,win32,win64,native] [default prompt, or skip if you already have one built, multi is both win32 and win64]
+      --compiler-flavors=[gyan_essentials,gyan_full,btbn,win64,native] [default prompt, or skip if you already have one built]
       --cflags=[default is $original_cflags, which works on any cpu, see README for options]
       --git-get-latest=y [do a git pull for latest code from repositories like FFmpeg--can force a rebuild if changes are detected]
       --build-x264-with-libav=n build x264.exe with bundled/included "libav" ffmpeg libraries within it
@@ -2745,7 +2785,11 @@ while true; do
       --debug Make this script  print out each line as it executes
       --enable-gpl=[y] set to n to do an lgpl build
       --build-dependencies=y [builds the ffmpeg dependencies. Disable it when the dependencies was built once and can greatly reduce build time. ]
+      --rebuild_compiler=n [set to y to force rebuild the cross compiler]
+      --ffmpeg_rebuild=y [set to n to use existing download of ffmpeg git]
        "; exit 0 ;;
+       #REMOVED OPTIONS
+       #--build-intel-qsv=y (set to y to include the [non windows xp compat.] qsv library and ffmpeg module. NB this not not hevc_qsv...
     --sandbox-ok=* ) sandbox_ok="${1#*=}"; shift ;;
     --gcc-cpu-count=* ) gcc_cpu_count="${1#*=}"; shift ;;
     --ffmpeg-git-checkout-version=* ) ffmpeg_git_checkout_version="${1#*=}"; shift ;;
@@ -2756,7 +2800,7 @@ while true; do
     --build-ismindex=* ) build_ismindex="${1#*=}"; shift ;;
     --git-get-latest=* ) git_get_latest="${1#*=}"; shift ;;
     --build-amd-amf=* ) build_amd_amf="${1#*=}"; shift ;;
-    --build-intel-qsv=* ) build_intel_qsv="${1#*=}"; shift ;;
+    #--build-intel-qsv=* ) build_intel_qsv="${1#*=}"; shift ;;
     --build-x264-with-libav=* ) build_x264_with_libav="${1#*=}"; shift ;;
     --build-mplayer=* ) build_mplayer="${1#*=}"; shift ;;
     --cflags=* )
@@ -2782,6 +2826,8 @@ while true; do
     --prefer-stable=* ) prefer_stable="${1#*=}"; shift ;;
     --enable-gpl=* ) enable_gpl="${1#*=}"; shift ;;
     --build-dependencies=* ) build_dependencies="${1#*=}"; shift ;;
+    --rebuild_compiler=* ) rebuild_compiler="${1#*=}"; shift ;;
+    --ffmpeg_rebuild=* ) ffmpeg_rebuild="${1#*=}"; shift ;;
     --debug ) set -x; shift ;;
     -- ) shift; break ;;
     -* ) echo "Error, unknown option: '$1'."; exit 1 ;;
@@ -2825,11 +2871,11 @@ if [[ $compiler_flavors == "native" ]]; then
   export PKG_CONFIG_PATH="$mingw_w64_x86_64_prefix/lib/pkgconfig"
   export PATH="$mingw_bin_path:$original_path"
   make_prefix_options="PREFIX=$mingw_w64_x86_64_prefix"
-  if [[ $(uname -m) =~ 'i686' ]]; then
-    bits_target=32
-  else
-    bits_target=64
-  fi
+  #if [[ $(uname -m) =~ 'i686' ]]; then
+  #  bits_target=32
+  #else
+  bits_target=64
+  #fi
   #  bs2b doesn't use pkg-config, sndfile needed Carbon :|
   export CPATH=$cur_dir/cross_compilers/native/include:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Carbon.framework/Versions/A/Headers # C_INCLUDE_PATH
   export LIBRARY_PATH=$cur_dir/cross_compilers/native/lib
@@ -2841,28 +2887,28 @@ if [[ $compiler_flavors == "native" ]]; then
   cd ..
 fi
 
-if [[ $compiler_flavors == "multi" || $compiler_flavors == "win32" ]]; then
-  echo
-  echo "Starting 32-bit builds..."
-  host_target='i686-w64-mingw32'
-  mkdir -p $cur_dir/cross_compilers/mingw-w64-i686/$host_target
-  mingw_w64_x86_64_prefix="$(realpath $cur_dir/cross_compilers/mingw-w64-i686/$host_target)"
-  mkdir -p $cur_dir/cross_compilers/mingw-w64-i686/bin
-  mingw_bin_path="$(realpath $cur_dir/cross_compilers/mingw-w64-i686/bin)"
-  export PKG_CONFIG_PATH="$mingw_w64_x86_64_prefix/lib/pkgconfig"
-  export PATH="$mingw_bin_path:$original_path"
-  bits_target=32
-  cross_prefix="$mingw_bin_path/i686-w64-mingw32-"
-  make_prefix_options="CC=${cross_prefix}gcc AR=${cross_prefix}ar PREFIX=$mingw_w64_x86_64_prefix RANLIB=${cross_prefix}ranlib LD=${cross_prefix}ld STRIP=${cross_prefix}strip CXX=${cross_prefix}g++"
-  work_dir="$(realpath $cur_dir/win32)"
-  mkdir -p "$work_dir"
-  cd "$work_dir"
-    build_ffmpeg_dependencies
-    build_apps
-  cd ..
-fi
+#if [[ $compiler_flavors == "multi" || $compiler_flavors == "win32" ]]; then
+#  echo
+#  echo "Starting 32-bit builds..."
+#  host_target='i686-w64-mingw32'
+#  mkdir -p $cur_dir/cross_compilers/mingw-w64-i686/$host_target
+#  mingw_w64_x86_64_prefix="$(realpath $cur_dir/cross_compilers/mingw-w64-i686/$host_target)"
+#  mkdir -p $cur_dir/cross_compilers/mingw-w64-i686/bin
+#  mingw_bin_path="$(realpath $cur_dir/cross_compilers/mingw-w64-i686/bin)"
+#  export PKG_CONFIG_PATH="$mingw_w64_x86_64_prefix/lib/pkgconfig"
+#  export PATH="$mingw_bin_path:$original_path"
+#  bits_target=32
+#  cross_prefix="$mingw_bin_path/i686-w64-mingw32-"
+#  make_prefix_options="CC=${cross_prefix}gcc AR=${cross_prefix}ar PREFIX=$mingw_w64_x86_64_prefix RANLIB=${cross_prefix}ranlib LD=${cross_prefix}ld STRIP=${cross_prefix}strip CXX=${cross_prefix}g++"
+#  work_dir="$(realpath $cur_dir/win32)"
+#  mkdir -p "$work_dir"
+#  cd "$work_dir"
+#    build_ffmpeg_dependencies
+#    build_apps
+#  cd ..
+#fi
 
-if [[ $compiler_flavors == "multi" || $compiler_flavors == "win64" ]]; then
+if [[ $compiler_flavors != "native" ]]; then
   echo
   echo "**************Starting 64-bit builds..." # make it have a bit easier to you can see when 32 bit is done
   host_target='x86_64-w64-mingw32'

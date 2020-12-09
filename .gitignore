@@ -5,6 +5,7 @@ output_*/
 config.log
 sandbox/
 .vs/
+.suo
 
 meson-cross.mingw.txt
 /.vs/slnx.sqlite
