@@ -113,10 +113,19 @@ do_make() {
 # Usage: do_make_install [extra_options]
 do_make_install() {
   local extra_make_install_options="${1:-}"
+  local touch_name
+  touch_name="$(get_touchfile_name "already_installed_$(pwd)")"
 
-  echo "  [make] Installing..."
-  # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
-  make install $extra_make_install_options
+  mkdir -p "$(dirname "$touch_name")"
+
+  if [[ ! -f "$touch_name" ]]; then
+    echo "  [make] Installing..."
+    # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
+    make install $extra_make_install_options
+    touch "$touch_name"   # only reached if make install succeeded
+  else
+    echo "  [make] Already installed, skipping."
+  fi
 }
 
 # Convenience wrapper — builds then installs in one call.
@@ -126,3 +135,93 @@ do_make_and_make_install() {
   do_make "$extra_options"
   do_make_install "$extra_options"
 }
+
+# Checks that all required tools are installed before starting the build.
+# Exits with a clear error message if anything is missing.
+check_prerequisites() {
+  local missing=()
+  local tools=(
+    "make"
+    "curl"
+    "git"
+    "tar"
+    "unzip"
+    "nproc"
+    "pkg-config"
+    "${CROSS_PREFIX}gcc"
+    "${CROSS_PREFIX}g++"
+    "${CROSS_PREFIX}ar"
+    "${CROSS_PREFIX}ranlib"
+  )
+
+  for tool in "${tools[@]}"; do
+    if ! command -v "$tool" &>/dev/null; then  # command -v checks if a tool exists in PATH
+      missing+=("$tool")                        # += appends to the array
+    fi
+  done
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "Error: the following required tools are missing:"
+    for tool in "${missing[@]}"; do
+      echo "  - $tool"
+    done
+    echo ""
+    echo "On Ubuntu/WSL, install missing tools with:"
+    echo "  sudo apt install -y ${missing[*]}"
+    exit 1
+  fi
+
+  echo "  [prereqs] All prerequisites found."
+}
+
+# Prints a visible section header to the terminal.
+# Usage: log_header "zlib 1.3.1"
+log_header() {
+  local name="$1"
+  echo ""
+  echo "========================================"
+  echo "  Building: $name"
+  echo "========================================"
+  echo ""
+}
+
+# Writes a single line to the summary log with timestamp and status.
+# Usage: log_summary "zlib" "SUCCESS"
+log_summary() {
+  local name="$1"
+  local status="$2"
+  local timestamp
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  local summary_file="$SCRIPT_DIR/logs/summary/build-${BUILD_TIMESTAMP}.log"
+
+  mkdir -p "$(dirname "$summary_file")"
+  printf "[%s] %-20s %s\n" "$timestamp" "$name" "$status" >> "$summary_file"
+}
+
+# Wraps a library build function with logging and error handling.
+# Captures all output to a per-library log file while still showing
+# it on the terminal. Records SUCCESS or FAILED in the summary log.
+# The build continues even if this library fails.
+# Usage: run_library "zlib" build_zlib
+run_library() {
+  local name="$1"
+  local build_fn="$2"
+  local lib_log_dir="$SCRIPT_DIR/logs/libraries/$BUILD_TIMESTAMP"
+  local lib_log="$lib_log_dir/${name}.log"
+
+  mkdir -p "$lib_log_dir"
+  log_header "$name"
+
+  # tee duplicates output — sends it to both the terminal and the log file.
+  # The subshell ( ) isolates any directory changes inside the build function.
+  # || true prevents set -e from stopping the script if the build fails.
+  if ( "$build_fn" 2>&1 | tee "$lib_log" ); then
+    log_summary "$name" "SUCCESS"
+  else
+    log_summary "$name" "FAILED  (see logs/libraries/$BUILD_TIMESTAMP/${name}.log)"
+    echo ""
+    echo "  *** $name FAILED — continuing with remaining libraries ***"
+    echo ""
+  fi
+}
+

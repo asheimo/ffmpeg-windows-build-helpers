@@ -20,7 +20,7 @@ build_zlib() {
 
   (
     cd "$folder"
-    do_configure "--prefix=$BUILD_PREFIX --static"
+    do_configure "--prefix=$BUILD_PREFIX --static" "./configure"
     do_make_and_make_install
   )
 }

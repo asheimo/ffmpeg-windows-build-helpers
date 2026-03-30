@@ -21,3 +21,7 @@ BUILD_MPLAYER="n"
 # Where compiled libraries are installed for the cross-compiler to find them.
 # This must match the prefix used when building the MinGW-w64 toolchain.
 BUILD_PREFIX="$SCRIPT_DIR/sandbox/mingw-w64-x86_64"
+
+# Prefix for all cross-compiler tools.
+# e.g. ${CROSS_PREFIX}gcc ? x86_64-w64-mingw32-gcc
+CROSS_PREFIX="x86_64-w64-mingw32-"
