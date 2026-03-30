@@ -1,1 +1,3 @@
 patches/*.* linguist-detectable=false
+*.sh text eol=lf
+*.conf text eol=lf
