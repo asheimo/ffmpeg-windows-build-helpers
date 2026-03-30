@@ -19,3 +19,7 @@ meson-cross.mingw.txt
 /.vs/ffmpeg-windows-build-helpers/v16/Browse.VC.opendb
 downloads/
 logs/
+
+# Extracted dependency source trees
+zlib-*/
+sandbox/

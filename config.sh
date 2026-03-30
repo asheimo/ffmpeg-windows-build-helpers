@@ -17,3 +17,7 @@ LICENSE="gpl"
 BUILD_FFMPEG="y"
 BUILD_MP4BOX="n"
 BUILD_MPLAYER="n"
+
+# Where compiled libraries are installed for the cross-compiler to find them.
+# This must match the prefix used when building the MinGW-w64 toolchain.
+BUILD_PREFIX="$SCRIPT_DIR/sandbox/mingw-w64-x86_64"

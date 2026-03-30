@@ -7,8 +7,6 @@
 [[ -n "${COMMON_SH_LOADED:-}" ]] && return
 COMMON_SH_LOADED=1
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Returns the path to a touchfile for a given step name.
 # Touchfiles are empty files that record a build step completed successfully.
 # Usage: touch "$(get_touchfile_name zlib_configure)"
@@ -60,7 +58,7 @@ download_and_unpack_file() {
   fi
 
   if [[ -d "$archive_dir" ]]; then
-    echo "  [download] Already unpacked $output_name, skipping."
+    echo "  [download] Already unpacked $archive_dir, skipping."
     return
   fi
 
