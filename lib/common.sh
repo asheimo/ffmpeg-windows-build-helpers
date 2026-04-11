@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common.sh — shared helper functions
+# common.sh â€” shared helper functions
 # Sourced by build.sh and all lib/*.sh files.
 # Do NOT run this script directly.
 
@@ -28,7 +28,7 @@ do_git_checkout() {
     git clone "$url" "$name"
   else
     echo "  [git] Fetching updates for $name..."
-    ( cd "$name" && git fetch ) # subshell avoids pushd/popd — auto-returns on failure
+    ( cd "$name" && git fetch ) # subshell avoids pushd/popd â€” auto-returns on failure
   fi
 
   if [[ -n "$branch" ]]; then
@@ -66,21 +66,59 @@ download_and_unpack_file() {
   tar -xf "$downloads_dir/$output_name" || unzip "$downloads_dir/$output_name"
 }
 
+# Runs cmake from a build subdirectory pointing at a source directory.
+# Skips if already configured (touchfile in the build dir).
+# Usage: do_cmake <source_dir> [extra_cmake_options]
+do_cmake() {
+  local source_dir="$1"
+  local cmake_options="${2:-}"
+  local touch_name
+  touch_name="$(get_touchfile_name "already_configured_$(pwd)")"  # keyed on build dir like do_configure
+
+  mkdir -p "$(dirname "$touch_name")"
+
+  if [[ ! -f "$touch_name" ]]; then
+    echo "  [cmake] Configuring..."
+    # Resolve AR and RANLIB to full paths â€” CMake writes them into build scripts
+    # and a bare name fails when the build script runs from a different directory.
+    local ar_path ranlib_path
+    ar_path="$(command -v "${CROSS_PREFIX}ar")"
+    ranlib_path="$(command -v "${CROSS_PREFIX}ranlib")"
+    # shellcheck disable=SC2086 â€” intentionally unquoted, flags must be separate arguments
+    cmake "$source_dir" \
+      -DCMAKE_SYSTEM_NAME=Windows \
+      -DCMAKE_C_COMPILER="$(command -v "${CROSS_PREFIX}gcc")" \
+      -DCMAKE_CXX_COMPILER="$(command -v "${CROSS_PREFIX}g++")" \
+      -DCMAKE_RC_COMPILER="$(command -v "${CROSS_PREFIX}windres")" \
+      -DCMAKE_AR="$ar_path" \
+      -DCMAKE_RANLIB="$ranlib_path" \
+      -DCMAKE_INSTALL_PREFIX="$BUILD_PREFIX" \
+      $cmake_options
+    touch "$touch_name"
+  else
+    echo "  [cmake] Already configured, skipping."
+  fi
+}
+
 # Runs ./configure with the given options, skipping if already done.
 # Uses a touchfile to track whether configuration succeeded.
-# Usage: do_configure [options] [configure_script_name]
+#
+# Each flag must be passed as a separate argument so that flags containing
+# spaces (e.g. --extra-ldflags="-L/path -static") are passed through intact.
+# Usage: do_configure [configure_script] [flag] [flag] ...
+#   configure_script defaults to ./configure if not specified.
+#   All remaining arguments are passed directly to the configure script.
 do_configure() {
-  local configure_options="${1:-}"
-  local configure_name="${2:-./configure}"
+  local configure_name="${1:-./configure}"
+  shift
   local touch_name
-  touch_name="$(get_touchfile_name "already_configured_${configure_name}")"
+  touch_name="$(get_touchfile_name "already_configured_$(pwd)")"  # keyed on pwd so each library gets its own touchfile
 
   mkdir -p "$(dirname "$touch_name")"
 
   if [[ ! -f "$touch_name" ]]; then
     echo "  [configure] Running $configure_name..."
-    # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
-    "$configure_name" $configure_options
+    "$configure_name" "$@"
     touch "$touch_name"
   else
     echo "  [configure] Already configured, skipping."
@@ -101,7 +139,7 @@ do_make() {
 
   if [[ ! -f "$touch_name" ]]; then
     echo "  [make] Building with $cpu_count jobs..."
-    # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
+    # shellcheck disable=SC2086 â€” intentionally unquoted, flags must be separate arguments
     make -j"$cpu_count" $extra_make_options
     touch "$touch_name"
   else
@@ -120,7 +158,7 @@ do_make_install() {
 
   if [[ ! -f "$touch_name" ]]; then
     echo "  [make] Installing..."
-    # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
+    # shellcheck disable=SC2086 â€” intentionally unquoted, flags must be separate arguments
     make install $extra_make_install_options
     touch "$touch_name"   # only reached if make install succeeded
   else
@@ -128,12 +166,32 @@ do_make_install() {
   fi
 }
 
-# Convenience wrapper — builds then installs in one call.
+# Convenience wrapper â€” builds then installs in one call.
 # Usage: do_make_and_make_install [extra_options]
 do_make_and_make_install() {
   local extra_options="${1:-}"
   do_make "$extra_options"
   do_make_install "$extra_options"
+}
+
+# Applies a unified diff patch file to the current directory.
+# Skips silently if the patch has already been applied (patch --dry-run check).
+# Usage: do_apply_patch <patch_file>
+do_apply_patch() {
+  local patch_file="$1"
+  # Detect patch strip level: git-format patches use "diff --git" and need -p1;
+  # traditional unified diffs use filenames directly and need -p0.
+  local strip_level=0
+  if grep -q "^diff --git" "$patch_file"; then
+    strip_level=1
+  fi
+
+  if patch --dry-run -p${strip_level} -R --quiet < "$patch_file" &>/dev/null; then
+    echo "  [patch] Already applied $(basename "$patch_file"), skipping."
+  else
+    echo "  [patch] Applying $(basename "$patch_file")..."
+    patch -p${strip_level} < "$patch_file"
+  fi
 }
 
 # Checks that all required tools are installed before starting the build.
@@ -148,6 +206,8 @@ check_prerequisites() {
     "unzip"
     "nproc"
     "pkg-config"
+    "nasm"
+    "cmake"
     "${CROSS_PREFIX}gcc"
     "${CROSS_PREFIX}g++"
     "${CROSS_PREFIX}ar"
@@ -212,16 +272,15 @@ run_library() {
   mkdir -p "$lib_log_dir"
   log_header "$name"
 
-  # tee duplicates output — sends it to both the terminal and the log file.
+  # tee duplicates output â€” sends it to both the terminal and the log file.
   # The subshell ( ) isolates any directory changes inside the build function.
   # || true prevents set -e from stopping the script if the build fails.
-  if ( "$build_fn" 2>&1 | tee "$lib_log" ); then
+  if ( cd "$BUILD_DIR" && "$build_fn" 2>&1 | tee "$lib_log" ); then
     log_summary "$name" "SUCCESS"
   else
     log_summary "$name" "FAILED  (see logs/libraries/$BUILD_TIMESTAMP/${name}.log)"
     echo ""
-    echo "  *** $name FAILED — continuing with remaining libraries ***"
+    echo "  *** $name FAILED â€” continuing with remaining libraries ***"
     echo ""
   fi
 }
-

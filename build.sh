@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# build.sh — main entry point
+# build.sh â€” main entry point
 # Usage: ./build.sh [options]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Timestamp for this run — used to name log files uniquely
+# Timestamp for this run â€” used to name log files uniquely
 BUILD_TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
 export BUILD_TIMESTAMP
 
@@ -14,10 +14,16 @@ source "$SCRIPT_DIR/versions.conf"
 source "$SCRIPT_DIR/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/zlib.sh"
+source "$SCRIPT_DIR/lib/bzip2.sh"
+source "$SCRIPT_DIR/lib/liblzma.sh"
+source "$SCRIPT_DIR/lib/nv-codec-headers.sh"
+source "$SCRIPT_DIR/lib/x264.sh"
+source "$SCRIPT_DIR/lib/x265.sh"
+source "$SCRIPT_DIR/lib/ffmpeg.sh"
 
 # Export cross-compiler tools so all library builds use the right compiler.
 # These are environment variables, so they're inherited by every subprocess
-# that build.sh spawns — no need to pass them to each library individually.
+# that build.sh spawns â€” no need to pass them to each library individually.
 export CC="${CROSS_PREFIX}gcc"
 export CXX="${CROSS_PREFIX}g++"
 export AR="${CROSS_PREFIX}ar"
@@ -36,9 +42,16 @@ echo ""
 mkdir -p "$SCRIPT_DIR/logs/touched"
 mkdir -p "$SCRIPT_DIR/downloads"
 mkdir -p "$BUILD_PREFIX"
+mkdir -p "$BUILD_DIR"
 
 # Verify all required tools are present before starting
 check_prerequisites
 
 # Build dependencies
-run_library "zlib" build_zlib
+run_library "zlib"             build_zlib
+run_library "bzip2"            build_bzip2
+run_library "liblzma"          build_liblzma
+run_library "nv-codec-headers" build_nv_codec_headers
+run_library "x264"             build_x264
+run_library "x265"             build_x265
+run_library "ffmpeg"           build_ffmpeg

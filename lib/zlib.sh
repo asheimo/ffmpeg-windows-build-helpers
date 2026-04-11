@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zlib.sh — builds zlib, a general-purpose compression library.
+# zlib.sh â€” builds zlib, a general-purpose compression library.
 # Used by: ffmpeg, libpng, and many others.
 # https://github.com/madler/zlib
 
@@ -20,7 +20,9 @@ build_zlib() {
 
   (
     cd "$folder"
-    do_configure "--prefix=$BUILD_PREFIX --static" "./configure"
+    do_configure "./configure" \
+      "--prefix=$BUILD_PREFIX" \
+      "--static"
     do_make_and_make_install
   )
 }

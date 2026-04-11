@@ -22,6 +22,10 @@ BUILD_MPLAYER="n"
 # This must match the prefix used when building the MinGW-w64 toolchain.
 BUILD_PREFIX="$SCRIPT_DIR/sandbox/mingw-w64-x86_64"
 
+# Where library sources are cloned/extracted and built.
+# Kept separate from the repo root to avoid clutter.
+BUILD_DIR="$SCRIPT_DIR/build"
+
 # Prefix for all cross-compiler tools.
-# e.g. ${CROSS_PREFIX}gcc ? x86_64-w64-mingw32-gcc
+# e.g. ${CROSS_PREFIX}gcc — x86_64-w64-mingw32-gcc
 CROSS_PREFIX="x86_64-w64-mingw32-"
