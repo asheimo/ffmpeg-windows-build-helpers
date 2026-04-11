@@ -8,6 +8,12 @@
 #   2. 10-bit depth only (libx265_main10.a)
 #   3. 8-bit depth as primary, linked with 10-bit and 12-bit (libx265.a)
 # The final libx265.a contains all three merged via ar -M.
+#
+# Note: ENABLE_ASSEMBLY=OFF is required for all passes when cross-compiling
+# with clang/llvm-mingw. x265's CMakeLists.txt passes -march=i686 to nasm
+# for 32-bit compat objects, which clang-as does not support.
+# Assembly is disabled to avoid this; the encoder still functions correctly
+# via C fallbacks and clang's own auto-vectorization.
 
 # Guard against being sourced more than once
 [[ -n "${X265_SH_LOADED:-}" ]] && return
@@ -29,10 +35,6 @@ build_x265() {
   (
     cd "$folder"
 
-    # Fix CMake's CPU detection when SYSPROC is empty during cross-compilation.
-    # Without this patch x265 fails to set X86=1 and skips all asm optimizations.
-    do_apply_patch "$SCRIPT_DIR/patches/x265_x86_noasm_fix.patch"
-
     mkdir -p 12bit 10bit 8bit
 
     # Pass 1: 12-bit library (no CLI, no public C API — linked into 8-bit later)
@@ -41,6 +43,7 @@ build_x265() {
       do_cmake ../source \
         "-DENABLE_SHARED=0 \
          -DENABLE_CLI=0 \
+         -DENABLE_ASSEMBLY=OFF \
          -DHIGH_BIT_DEPTH=1 \
          -DMAIN12=1 \
          -DEXPORT_C_API=0"
@@ -54,6 +57,7 @@ build_x265() {
       do_cmake ../source \
         "-DENABLE_SHARED=0 \
          -DENABLE_CLI=0 \
+         -DENABLE_ASSEMBLY=OFF \
          -DHIGH_BIT_DEPTH=1 \
          -DENABLE_HDR10_PLUS=1 \
          -DEXPORT_C_API=0"
@@ -69,6 +73,7 @@ build_x265() {
       do_cmake ../source \
         "-DENABLE_SHARED=0 \
          -DENABLE_CLI=0 \
+         -DENABLE_ASSEMBLY=OFF \
          -DEXTRA_LINK_FLAGS=-L. \
          -DLINKED_10BIT=1 \
          -DLINKED_12BIT=1 \
@@ -101,8 +106,8 @@ EOF
       do_make_install
 
       # x265.pc lists -lgcc_s -lgcc in Libs.private, which causes ffmpeg to
-      # link against the shared GCC runtime (libgcc_s_seh-1.dll). Remove them
-      # so the static GCC runtime is used instead.
+      # link against the shared GCC runtime. Remove them so the static runtime
+      # is used instead.
       sed -i 's/-lgcc_s -lgcc//g' "${BUILD_PREFIX}/lib/pkgconfig/x265.pc"
     )
   )

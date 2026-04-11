@@ -13,6 +13,7 @@ export BUILD_TIMESTAMP
 source "$SCRIPT_DIR/versions.conf"
 source "$SCRIPT_DIR/config.sh"
 source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/toolchain.sh"
 source "$SCRIPT_DIR/lib/zlib.sh"
 source "$SCRIPT_DIR/lib/bzip2.sh"
 source "$SCRIPT_DIR/lib/liblzma.sh"
@@ -20,17 +21,6 @@ source "$SCRIPT_DIR/lib/nv-codec-headers.sh"
 source "$SCRIPT_DIR/lib/x264.sh"
 source "$SCRIPT_DIR/lib/x265.sh"
 source "$SCRIPT_DIR/lib/ffmpeg.sh"
-
-# Export cross-compiler tools so all library builds use the right compiler.
-# These are environment variables, so they're inherited by every subprocess
-# that build.sh spawns — no need to pass them to each library individually.
-export CC="${CROSS_PREFIX}gcc"
-export CXX="${CROSS_PREFIX}g++"
-export AR="${CROSS_PREFIX}ar"
-export RANLIB="${CROSS_PREFIX}ranlib"
-export LD="${CROSS_PREFIX}ld"
-export STRIP="${CROSS_PREFIX}strip"
-export WINDRES="${CROSS_PREFIX}windres"
 
 echo "ffmpeg-build: starting"
 echo "  Target:   $COMPILER_FLAVOR"
@@ -44,8 +34,30 @@ mkdir -p "$SCRIPT_DIR/downloads"
 mkdir -p "$BUILD_PREFIX"
 mkdir -p "$BUILD_DIR"
 
-# Verify all required tools are present before starting
+# Verify host prerequisites are present before starting
 check_prerequisites
+
+# Install the llvm-mingw cross-compiler toolchain first.
+# This must run before PATH is updated and before any library builds.
+echo "========================================"
+echo "  Toolchain: llvm-mingw"
+echo "========================================"
+echo ""
+build_toolchain
+
+# Prepend llvm-mingw bin to PATH so all subsequent builds use it.
+# This replaces the Ubuntu-packaged mingw-w64 toolchain entirely.
+TOOLCHAIN_BIN="$(get_toolchain_bin_dir)"
+export PATH="${TOOLCHAIN_BIN}:${PATH}"
+
+# Export cross-compiler tools so all library builds use the right compiler.
+export CC="${CROSS_PREFIX}gcc"
+export CXX="${CROSS_PREFIX}g++"
+export AR="${CROSS_PREFIX}ar"
+export RANLIB="${CROSS_PREFIX}ranlib"
+export LD="${CROSS_PREFIX}ld"
+export STRIP="${CROSS_PREFIX}strip"
+export WINDRES="${CROSS_PREFIX}windres"
 
 # Build dependencies
 run_library "zlib"             build_zlib

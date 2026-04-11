@@ -87,6 +87,7 @@ do_cmake() {
     # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
     cmake "$source_dir" \
       -DCMAKE_SYSTEM_NAME=Windows \
+      -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
       -DCMAKE_C_COMPILER="$(command -v "${CROSS_PREFIX}gcc")" \
       -DCMAKE_CXX_COMPILER="$(command -v "${CROSS_PREFIX}g++")" \
       -DCMAKE_RC_COMPILER="$(command -v "${CROSS_PREFIX}windres")" \
@@ -208,12 +209,10 @@ check_prerequisites() {
     "pkg-config"
     "nasm"
     "cmake"
-    "llvm-config"  # installed via: sudo apt install -y llvm
-    "${CROSS_PREFIX}gcc"
-    "${CROSS_PREFIX}g++"
-    "${CROSS_PREFIX}ar"
-    "${CROSS_PREFIX}ranlib"
   )
+  # Note: cross-compiler tools (x86_64-w64-mingw32-*) are not checked here
+  # because they come from llvm-mingw which build.sh installs before the
+  # library builds run. They are available via PATH at build time.
 
   for tool in "${tools[@]}"; do
     if ! command -v "$tool" &>/dev/null; then  # command -v checks if a tool exists in PATH
@@ -232,7 +231,6 @@ check_prerequisites() {
     local packages=()
     for tool in "${missing[@]}"; do
       case "$tool" in
-        llvm-config) packages+=("llvm") ;;
         *) packages+=("$tool") ;;
       esac
     done

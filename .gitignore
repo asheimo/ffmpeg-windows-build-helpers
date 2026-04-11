@@ -21,3 +21,5 @@ config.log
 
 # Meson cross-compilation file (generated at build time)
 meson-cross.mingw.txt
+
+cross_compilers/
