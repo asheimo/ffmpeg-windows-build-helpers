@@ -51,6 +51,7 @@ build_ffmpeg() {
       "--enable-nvdec" \
       "--enable-cuda" \
       "--enable-cuvid" \
+      "--enable-cuda-llvm" \
       "--enable-ffnvcodec"
 
     do_make

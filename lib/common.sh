@@ -208,6 +208,7 @@ check_prerequisites() {
     "pkg-config"
     "nasm"
     "cmake"
+    "llvm-config"  # installed via: sudo apt install -y llvm
     "${CROSS_PREFIX}gcc"
     "${CROSS_PREFIX}g++"
     "${CROSS_PREFIX}ar"
@@ -227,7 +228,15 @@ check_prerequisites() {
     done
     echo ""
     echo "On Ubuntu/WSL, install missing tools with:"
-    echo "  sudo apt install -y ${missing[*]}"
+    # Map tool binary names to their apt package names where they differ
+    local packages=()
+    for tool in "${missing[@]}"; do
+      case "$tool" in
+        llvm-config) packages+=("llvm") ;;
+        *) packages+=("$tool") ;;
+      esac
+    done
+    echo "  sudo apt install -y ${packages[*]}"
     exit 1
   fi
 
