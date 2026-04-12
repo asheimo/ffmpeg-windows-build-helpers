@@ -17,6 +17,14 @@ source "$SCRIPT_DIR/lib/toolchain.sh"
 source "$SCRIPT_DIR/lib/zlib.sh"
 source "$SCRIPT_DIR/lib/bzip2.sh"
 source "$SCRIPT_DIR/lib/liblzma.sh"
+source "$SCRIPT_DIR/lib/libiconv.sh"
+source "$SCRIPT_DIR/lib/libpng.sh"
+source "$SCRIPT_DIR/lib/freetype.sh"
+source "$SCRIPT_DIR/lib/fribidi.sh"
+source "$SCRIPT_DIR/lib/harfbuzz.sh"
+source "$SCRIPT_DIR/lib/libxml2.sh"
+source "$SCRIPT_DIR/lib/fontconfig.sh"
+source "$SCRIPT_DIR/lib/libass.sh"
 source "$SCRIPT_DIR/lib/nv-codec-headers.sh"
 source "$SCRIPT_DIR/lib/x264.sh"
 source "$SCRIPT_DIR/lib/x265.sh"
@@ -59,11 +67,25 @@ export LD="${CROSS_PREFIX}ld"
 export STRIP="${CROSS_PREFIX}strip"
 export WINDRES="${CROSS_PREFIX}windres"
 
-# Build dependencies
+# Build dependencies in order — each group depends on the previous
 run_library "zlib"             build_zlib
 run_library "bzip2"            build_bzip2
 run_library "liblzma"          build_liblzma
+
+# Subtitle rendering stack (order matters)
+run_library "libiconv"         build_libiconv
+run_library "libpng"           build_libpng
+run_library "freetype"         build_freetype
+run_library "fribidi"          build_fribidi
+run_library "harfbuzz"         build_harfbuzz
+run_library "libxml2"          build_libxml2
+run_library "fontconfig"       build_fontconfig
+run_library "libass"           build_libass
+
+# Video codec dependencies
 run_library "nv-codec-headers" build_nv_codec_headers
 run_library "x264"             build_x264
 run_library "x265"             build_x265
+
+# FFmpeg
 run_library "ffmpeg"           build_ffmpeg

@@ -47,6 +47,8 @@ build_ffmpeg() {
       "--enable-version3" \
       "--enable-libx264" \
       "--enable-libx265" \
+      "--enable-libass" \
+      "--enable-fontconfig" \
       "--enable-nvenc" \
       "--enable-nvdec" \
       "--enable-cuda" \
