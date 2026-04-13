@@ -6,13 +6,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "This will permanently delete the following directories:"
+echo "This will permanently delete the following directories and files:"
 echo ""
 echo "  sandbox/         (compiled libraries and ffmpeg.exe)"
 echo "  build/           (library source trees)"
 echo "  downloads/       (downloaded tarballs and archives)"
 echo "  logs/            (build logs and touchfiles)"
 echo "  cross_compilers/ (llvm-mingw toolchain)"
+echo "  build.cfg        (saved feature selections)"
 echo ""
 echo "A full rebuild from scratch will be required afterwards."
 echo ""
@@ -48,6 +49,11 @@ echo "  removed: logs/"
 
 rm -rf "$SCRIPT_DIR/cross_compilers"
 echo "  removed: cross_compilers/"
+
+if [[ -f "$SCRIPT_DIR/build.cfg" ]]; then
+  rm -f "$SCRIPT_DIR/build.cfg"
+  echo "  removed: build.cfg"
+fi
 
 echo ""
 echo "Done. Ready for a clean build."

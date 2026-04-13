@@ -5,7 +5,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Timestamp for this run — used to name log files uniquely
+# Load menu/settings handling first — parse_args reads/writes build.cfg
+# and sets FEATURE_* flags before any build logic runs.
+source "$SCRIPT_DIR/lib/menu.sh"
+parse_args "$@"
+
 BUILD_TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
 export BUILD_TIMESTAMP
 
@@ -32,7 +36,6 @@ source "$SCRIPT_DIR/lib/ffmpeg.sh"
 
 echo "ffmpeg-build: starting"
 echo "  Target:   $COMPILER_FLAVOR"
-echo "  Non-free: $NON_FREE"
 echo "  License:  $LICENSE"
 echo ""
 
@@ -114,15 +117,17 @@ run_library "zlib"             build_zlib
 run_library "bzip2"            build_bzip2
 run_library "liblzma"          build_liblzma
 
-# Subtitle rendering stack (order matters)
-run_library "libiconv"         build_libiconv
-run_library "libpng"           build_libpng
-run_library "freetype"         build_freetype
-run_library "harfbuzz"         build_harfbuzz
-run_library "fribidi"          build_fribidi
-run_library "libxml2"          build_libxml2
-run_library "fontconfig"       build_fontconfig
-run_library "libass"           build_libass
+# Subtitle rendering stack (order matters) — only built when subtitles enabled
+if [[ "${FEATURE_SUBTITLES}" == "y" ]]; then
+  run_library "libiconv"         build_libiconv
+  run_library "libpng"           build_libpng
+  run_library "freetype"         build_freetype
+  run_library "harfbuzz"         build_harfbuzz
+  run_library "fribidi"          build_fribidi
+  run_library "libxml2"          build_libxml2
+  run_library "fontconfig"       build_fontconfig
+  run_library "libass"           build_libass
+fi
 
 # Video codec dependencies
 run_library "nv-codec-headers" build_nv_codec_headers
@@ -135,24 +140,29 @@ run_library "x265"             build_x265
 check_ffmpeg_dependencies() {
   local missing=()
 
-  # Array of build folder names for all required ffmpeg dependencies.
-  # These must match the actual folder names created under BUILD_DIR.
+  # Base required folders — always checked
   local required_folders=(
     "zlib-1.3.1"
     "bzip2-1.0.8"
     "xz-5.6.3"
-    "libiconv-1.17"
-    "libpng"
-    "freetype-2.13.3"
-    "fribidi-1.0.16"
-    "harfbuzz"
-    "libxml2"
-    "fontconfig-2.17.1"
-    "libass"
     "nv-codec-headers"
     "x264"
     "x265"
   )
+
+  # Subtitle rendering stack — only checked when feature is enabled
+  if [[ "${FEATURE_SUBTITLES}" == "y" ]]; then
+    required_folders+=(
+      "libiconv-1.17"
+      "libpng"
+      "freetype-2.13.3"
+      "fribidi-1.0.16"
+      "harfbuzz"
+      "libxml2"
+      "fontconfig-2.17.1"
+      "libass"
+    )
+  fi
 
   for folder in "${required_folders[@]}"; do
     local found

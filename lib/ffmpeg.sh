@@ -28,34 +28,44 @@ build_ffmpeg() {
     export PKG_CONFIG_PATH="${BUILD_PREFIX}/lib/pkgconfig"
 
     echo "  [configure] Running ./configure..."
-    "./configure" \
-      "--prefix=${BUILD_PREFIX}" \
-      "--pkg-config=pkg-config" \
-      "--pkg-config-flags=--static" \
-      "--extra-cflags=-I${BUILD_PREFIX}/include" \
-      "--extra-ldflags=-L${BUILD_PREFIX}/lib -static -static-libgcc -static-libstdc++" \
-      "--extra-libs=-lpthread" \
-      "--cross-prefix=${CROSS_PREFIX}" \
-      "--arch=x86_64" \
-      "--target-os=mingw32" \
-      "--enable-cross-compile" \
-      "--disable-shared" \
-      "--enable-static" \
-      "--disable-debug" \
-      "--disable-doc" \
-      "--disable-autodetect" \
-      "--enable-gpl" \
-      "--enable-version3" \
-      "--enable-libx264" \
-      "--enable-libx265" \
-      "--enable-libass" \
-      "--enable-fontconfig" \
-      "--enable-nvenc" \
-      "--enable-nvdec" \
-      "--enable-cuda" \
-      "--enable-cuvid" \
-      "--enable-cuda-llvm" \
+    # Build the configure flags array conditionally based on feature selections
+    local ffmpeg_flags=(
+      "--prefix=${BUILD_PREFIX}"
+      "--pkg-config=pkg-config"
+      "--pkg-config-flags=--static"
+      "--extra-cflags=-I${BUILD_PREFIX}/include"
+      "--extra-ldflags=-L${BUILD_PREFIX}/lib -static -static-libgcc -static-libstdc++"
+      "--extra-libs=-lpthread"
+      "--cross-prefix=${CROSS_PREFIX}"
+      "--arch=x86_64"
+      "--target-os=mingw32"
+      "--enable-cross-compile"
+      "--disable-shared"
+      "--enable-static"
+      "--disable-debug"
+      "--disable-doc"
+      "--disable-autodetect"
+      "--enable-gpl"
+      "--enable-version3"
+      "--enable-libx264"
+      "--enable-libx265"
+      "--enable-nvenc"
+      "--enable-nvdec"
+      "--enable-cuda"
+      "--enable-cuvid"
+      "--enable-cuda-llvm"
       "--enable-ffnvcodec"
+    )
+
+    # Subtitle rendering flags — only when feature is enabled
+    if [[ "${FEATURE_SUBTITLES:-n}" == "y" ]]; then
+      ffmpeg_flags+=(
+        "--enable-libass"
+        "--enable-fontconfig"
+      )
+    fi
+
+    "./configure" "${ffmpeg_flags[@]}"
 
     echo "  [make] Building with $(nproc) jobs..."
     make -j"$(nproc)"
