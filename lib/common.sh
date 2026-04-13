@@ -324,7 +324,7 @@ run_library() {
   # tee duplicates output — sends it to both the terminal and the log file.
   # The subshell ( ) isolates any directory changes inside the build function.
   # || true prevents set -e from stopping the script if the build fails.
-  if ( cd "$BUILD_DIR" && "$build_fn" 2>&1 | tee "$lib_log" ); then
+  if ( cd "$BUILD_DIR" && "$build_fn" 2>&1 | tee "$lib_log" | { [[ "${BUILD_VERBOSE:-y}" == "y" ]] && cat || grep -E "^\s+\[(git|download|configure|cmake|make|patch|ar|deps)\]|ERROR|FAILED|warning:"; } ); then
     log_summary "$name" "SUCCESS"
   else
     log_summary "$name" "FAILED  (see logs/libraries/$BUILD_TIMESTAMP/${name}.log)"

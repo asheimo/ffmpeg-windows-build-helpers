@@ -23,3 +23,5 @@ config.log
 meson-cross.mingw.txt
 
 cross_compilers/
+
+*.zip

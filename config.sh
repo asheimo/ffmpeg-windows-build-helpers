@@ -18,6 +18,14 @@ BUILD_FFMPEG="y"
 BUILD_MP4BOX="n"
 BUILD_MPLAYER="n"
 
+# How many previous build log folders to keep under logs/libraries/.
+# Older folders beyond this count are deleted at the start of each run.
+LOG_RETENTION=5
+
+# Show verbose build output (CC lines, linker commands, etc.) on the terminal.
+# Set to "n" to show only section headers and key milestones.
+BUILD_VERBOSE="y"
+
 # Where the llvm-mingw cross-compiler toolchain is installed.
 # build.sh prepends this to PATH after the toolchain is downloaded.
 CROSS_COMPILER_DIR="$SCRIPT_DIR/cross_compilers"

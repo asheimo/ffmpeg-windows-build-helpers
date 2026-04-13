@@ -10,7 +10,8 @@ FFMPEG_SH_LOADED=1
 # build_ffmpeg()
 # Clones or updates ffmpeg and builds it against the libraries in BUILD_PREFIX.
 # Version is controlled by FFMPEG_VERSION in versions.conf.
-# Skips any step that has already completed successfully.
+# Always runs configure, make, and install — no touchfiles — so any change to
+# flags or dependencies is always picked up without manual cleanup.
 build_ffmpeg() {
   local version="${FFMPEG_VERSION:?FFMPEG_VERSION not set in versions.conf}"
   local folder="ffmpeg"
@@ -26,9 +27,8 @@ build_ffmpeg() {
     # pkg-config must find .pc files from our sandbox prefix.
     export PKG_CONFIG_PATH="${BUILD_PREFIX}/lib/pkgconfig"
 
-    # Each flag is a separate argument — spaces inside flag values are preserved
-    # because do_configure uses "$@" to pass them through to ./configure intact.
-    do_configure "./configure" \
+    echo "  [configure] Running ./configure..."
+    "./configure" \
       "--prefix=${BUILD_PREFIX}" \
       "--pkg-config=pkg-config" \
       "--pkg-config-flags=--static" \
@@ -43,6 +43,7 @@ build_ffmpeg() {
       "--enable-static" \
       "--disable-debug" \
       "--disable-doc" \
+      "--disable-autodetect" \
       "--enable-gpl" \
       "--enable-version3" \
       "--enable-libx264" \
@@ -56,7 +57,10 @@ build_ffmpeg() {
       "--enable-cuda-llvm" \
       "--enable-ffnvcodec"
 
-    do_make
-    do_make_install
+    echo "  [make] Building with $(nproc) jobs..."
+    make -j"$(nproc)"
+
+    echo "  [make] Installing..."
+    make install
   )
 }

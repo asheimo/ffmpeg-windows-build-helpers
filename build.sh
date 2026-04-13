@@ -61,9 +61,17 @@ fi
 
 # Create required directories
 mkdir -p "$SCRIPT_DIR/logs/touched"
+mkdir -p "$SCRIPT_DIR/logs/libraries"
 mkdir -p "$SCRIPT_DIR/downloads"
 mkdir -p "$BUILD_PREFIX"
 mkdir -p "$BUILD_DIR"
+
+# Prune old log folders, keeping only the most recent LOG_RETENTION runs.
+mapfile -t _old_logs < <(ls -1dt "$SCRIPT_DIR/logs/libraries"/*/ 2>/dev/null | tail -n +"$((LOG_RETENTION + 1))")
+for _log_dir in "${_old_logs[@]}"; do
+  rm -rf "$_log_dir"
+done
+unset _old_logs _log_dir
 
 # Verify host prerequisites are present before starting
 check_prerequisites
@@ -170,3 +178,12 @@ check_ffmpeg_dependencies() {
 
 check_ffmpeg_dependencies
 run_library "ffmpeg"       build_ffmpeg
+
+echo ""
+echo "========================================"
+echo "  Build complete"
+echo "========================================"
+echo ""
+FFMPEG_WIN_PATH="$(echo "${BUILD_PREFIX}/bin/ffmpeg.exe" | sed 's|/mnt/c/|C:\\|; s|/|\\|g')"
+echo "  To verify: \"${FFMPEG_WIN_PATH}\" -version"
+echo ""
