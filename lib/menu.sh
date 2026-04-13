@@ -147,6 +147,70 @@ show_dry_run() {
   echo ""
 }
 
+# show_whiptail_menu()
+# Launches an interactive checklist using whiptail.
+# Pre-checks items based on current feature flag state.
+# Saves selections to build.cfg and returns (unless dry run selected).
+show_whiptail_menu() {
+  # Check whiptail is available
+  if ! command -v whiptail &>/dev/null; then
+    echo "Error: whiptail is not installed."
+    echo "Install it with: sudo apt install whiptail"
+    exit 1
+  fi
+
+  # Load existing settings so we can pre-check the right boxes
+  load_settings
+
+  # Build pre-check state for each item — "ON" if previously enabled, "OFF" if not
+  local sub_state nvf_state nfr_state dry_state
+  sub_state=$([[ "$FEATURE_SUBTITLES"      == "y" ]] && echo "ON" || echo "OFF")
+  nvf_state=$([[ "$FEATURE_NVIDIA_FILTERS" == "y" ]] && echo "ON" || echo "OFF")
+  nfr_state=$([[ "$FEATURE_NON_FREE"       == "y" ]] && echo "ON" || echo "OFF")
+  dry_state=$([[ "$DRY_RUN"               == "y" ]] && echo "ON" || echo "OFF")
+
+  # Launch whiptail checklist.
+  # 3>&1 1>&2 2>&3 swaps stdout and stderr so we can capture whiptail's output,
+  # which it writes to stderr by design to avoid interfering with the terminal UI.
+  local result
+  result=$(whiptail \
+    --title "ffmpeg-windows-build-helpers" \
+    --checklist "Select features to build:\n(Space to toggle, Enter to confirm)" \
+    20 72 4 \
+    "subtitles"      "Text subtitle rendering (SRT, ASS/SSA)"    "$sub_state" \
+    "nvidia-filters" "NVIDIA GPU filters (NPP, GPU compositing)"  "$nvf_state" \
+    "non-free"       "Non-free codecs (fdk-aac, decklink)"        "$nfr_state" \
+    "dry-run"        "Preview only — show what would be built"    "$dry_state" \
+    3>&1 1>&2 2>&3)
+
+  # Exit code 1 means the user pressed Cancel
+  if [[ $? -ne 0 ]]; then
+    echo "Cancelled."
+    exit 0
+  fi
+
+  # Reset all flags then set based on what was selected.
+  # whiptail returns selected items as space-separated quoted strings e.g. "subtitles" "non-free"
+  FEATURE_SUBTITLES="n"
+  FEATURE_NVIDIA_FILTERS="n"
+  FEATURE_NON_FREE="n"
+  DRY_RUN="n"
+
+  [[ "$result" == *'"subtitles"'*      ]] && FEATURE_SUBTITLES="y"
+  [[ "$result" == *'"nvidia-filters"'* ]] && FEATURE_NVIDIA_FILTERS="y"
+  [[ "$result" == *'"non-free"'*       ]] && FEATURE_NON_FREE="y"
+  [[ "$result" == *'"dry-run"'*        ]] && DRY_RUN="y"
+
+  # Only save settings if this is not a dry run — dry run is informational only
+  if [[ "$DRY_RUN" != "y" ]]; then
+    save_settings
+    echo ""
+    echo "  Settings saved."
+    print_settings
+  fi
+  echo ""
+}
+
 # parse_args()
 # Processes command line arguments passed to build.sh.
 # Sets feature flags and handles -h / -i.
@@ -191,10 +255,23 @@ parse_args() {
     esac
   done
 
-  # If -i was passed, launch whiptail menu (placeholder until menu.sh step 2)
+  # If -i was passed, launch whiptail menu then confirm before proceeding
   if [[ "$interactive" == "y" ]]; then
-    echo "Interactive mode not yet implemented. Use --help to see available options."
-    exit 0
+    show_whiptail_menu
+    # If dry run was selected in the menu, show and exit
+    if [[ "$DRY_RUN" == "y" ]]; then
+      show_dry_run
+      exit 0
+    fi
+    # Confirm before proceeding with the build
+    read -r -p "  Run with these settings? [Y/n]: " confirm
+    case "${confirm,,}" in
+      ""|y) echo "" ;;
+      *)
+        echo "Aborted."
+        exit 0
+        ;;
+    esac
   fi
 
   # No settings file and no explicit flags — print help and exit
@@ -204,9 +281,11 @@ parse_args() {
     show_help
   fi
 
-  # If explicit flags were passed, save them and proceed without prompting
+  # If explicit flags were passed, only save if not a dry run
   if [[ "$explicit" == "y" ]]; then
-    save_settings
+    if [[ "$DRY_RUN" != "y" ]]; then
+      save_settings
+    fi
   else
     # No explicit flags — load from saved settings and confirm
     load_settings
@@ -223,8 +302,7 @@ parse_args() {
         exit 0
         ;;
       c)
-        echo "Interactive mode not yet implemented. Edit build.cfg directly or pass flags on the command line."
-        exit 0
+        show_whiptail_menu
         ;;
       *)
         echo "Invalid selection. Aborted."
