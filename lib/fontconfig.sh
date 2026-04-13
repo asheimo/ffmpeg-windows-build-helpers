@@ -19,7 +19,7 @@ FONTCONFIG_SH_LOADED=1
 build_fontconfig() {
   local version="${FONTCONFIG_VERSION:?FONTCONFIG_VERSION not set in versions.conf}"
   local folder="fontconfig-${version}"
-  local url="https://www.freedesktop.org/software/fontconfig/release/${folder}.tar.xz"
+  local url="https://gitlab.freedesktop.org/api/v4/projects/890/packages/generic/fontconfig/${version}/${folder}.tar.xz"
 
   download_and_unpack_file "$url" "${folder}.tar.xz" "$folder"
 

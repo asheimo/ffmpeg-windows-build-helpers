@@ -29,9 +29,17 @@ build_freetype() {
 
   (
     cd "$folder"
+    # Unset CC so freetype's configure can detect the correct compilers itself.
+    # Per INSTALL.CROSS, setting CC to the cross-compiler confuses configure.
+    # --build and --host are sufficient to direct compiler selection.
+    unset CC
+    # --build and --host together tell configure this is a cross-compile.
+    # Per INSTALL.CROSS, both must be specified so configure correctly
+    # identifies the build system and uses the native compiler for apinames.
     do_configure "./configure" \
       "--prefix=${BUILD_PREFIX}" \
       "--host=${CROSS_PREFIX%-}" \
+      "--build=x86_64-pc-linux-gnu" \
       "--disable-shared" \
       "--enable-static" \
       "--with-zlib" \

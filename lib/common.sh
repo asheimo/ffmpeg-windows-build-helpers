@@ -9,10 +9,23 @@ COMMON_SH_LOADED=1
 
 # Returns the path to a touchfile for a given step name.
 # Touchfiles are empty files that record a build step completed successfully.
-# Usage: touch "$(get_touchfile_name zlib_configure)"
+# If the name contains a path (has a /), we keep the prefix before the first /
+# and append just the last directory component, giving short readable names.
+# e.g. already_configured_/path/to/zlib-1.3.1 -> already_configured_zlib-1.3.1
+# Names without a path (e.g. already_ar_merged_x265_origin) are used as-is.
+# Usage: touch "$(get_touchfile_name already_configured_$(pwd))"
 get_touchfile_name() {
   local name="$1"
-  echo "$SCRIPT_DIR/logs/touched/$name"
+  local safe_name
+  if [[ "$name" == */* ]]; then
+    local prefix dir
+    prefix="${name%%/*}"    # everything before the first slash
+    dir="${name##*/}"       # everything after the last slash
+    safe_name="${prefix}${dir}"
+  else
+    safe_name="$name"
+  fi
+  echo "$SCRIPT_DIR/logs/touched/$safe_name"
 }
 
 # Clones a git repo or fetches updates if it already exists,
@@ -63,7 +76,14 @@ download_and_unpack_file() {
   fi
 
   echo "  [download] Unpacking $output_name..."
-  tar -xf "$downloads_dir/$output_name" || unzip "$downloads_dir/$output_name"
+  if ! tar -xf "$downloads_dir/$output_name" 2>/dev/null && ! unzip "$downloads_dir/$output_name" 2>/dev/null; then
+    # Archive is corrupt — delete it and try downloading once more
+    echo "  [download] Archive appears corrupt, re-downloading $output_name..."
+    rm -f "$downloads_dir/$output_name"
+    curl "$url" -L --retry 5 -o "$downloads_dir/$output_name"
+    echo "  [download] Unpacking $output_name..."
+    tar -xf "$downloads_dir/$output_name" || unzip "$downloads_dir/$output_name"
+  fi
 }
 
 # Runs cmake from a build subdirectory pointing at a source directory.
@@ -85,7 +105,7 @@ do_cmake() {
     ar_path="$(command -v "${CROSS_PREFIX}ar")"
     ranlib_path="$(command -v "${CROSS_PREFIX}ranlib")"
     # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
-    cmake "$source_dir" \
+    if cmake "$source_dir" \
       -DCMAKE_SYSTEM_NAME=Windows \
       -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
       -DCMAKE_C_COMPILER="$(command -v "${CROSS_PREFIX}gcc")" \
@@ -94,8 +114,12 @@ do_cmake() {
       -DCMAKE_AR="$ar_path" \
       -DCMAKE_RANLIB="$ranlib_path" \
       -DCMAKE_INSTALL_PREFIX="$BUILD_PREFIX" \
-      $cmake_options
-    touch "$touch_name"
+      $cmake_options; then
+      touch "$touch_name"
+    else
+      echo "  [cmake] FAILED — not writing touchfile"
+      return 1
+    fi
   else
     echo "  [cmake] Already configured, skipping."
   fi
@@ -119,8 +143,12 @@ do_configure() {
 
   if [[ ! -f "$touch_name" ]]; then
     echo "  [configure] Running $configure_name..."
-    "$configure_name" "$@"
-    touch "$touch_name"
+    if "$configure_name" "$@"; then
+      touch "$touch_name"
+    else
+      echo "  [configure] FAILED — not writing touchfile"
+      return 1
+    fi
   else
     echo "  [configure] Already configured, skipping."
   fi
@@ -141,8 +169,12 @@ do_make() {
   if [[ ! -f "$touch_name" ]]; then
     echo "  [make] Building with $cpu_count jobs..."
     # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
-    make -j"$cpu_count" $extra_make_options
-    touch "$touch_name"
+    if make -j"$cpu_count" $extra_make_options; then
+      touch "$touch_name"
+    else
+      echo "  [make] FAILED — not writing touchfile"
+      return 1
+    fi
   else
     echo "  [make] Already built, skipping."
   fi
@@ -160,8 +192,12 @@ do_make_install() {
   if [[ ! -f "$touch_name" ]]; then
     echo "  [make] Installing..."
     # shellcheck disable=SC2086 — intentionally unquoted, flags must be separate arguments
-    make install $extra_make_install_options
-    touch "$touch_name"   # only reached if make install succeeded
+    if make install $extra_make_install_options; then
+      touch "$touch_name"
+    else
+      echo "  [make] Install FAILED — not writing touchfile"
+      return 1
+    fi
   else
     echo "  [make] Already installed, skipping."
   fi
@@ -209,6 +245,11 @@ check_prerequisites() {
     "pkg-config"
     "nasm"
     "cmake"
+    "autoconf"
+    "automake"
+    "libtoolize"
+    "autoreconf"
+    "gperf"
   )
   # Note: cross-compiler tools (x86_64-w64-mingw32-*) are not checked here
   # because they come from llvm-mingw which build.sh installs before the
@@ -231,7 +272,8 @@ check_prerequisites() {
     local packages=()
     for tool in "${missing[@]}"; do
       case "$tool" in
-        *) packages+=("$tool") ;;
+        libtoolize) packages+=("libtool-bin") ;;
+        *)          packages+=("$tool") ;;
       esac
     done
     echo "  sudo apt install -y ${packages[*]}"

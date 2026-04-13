@@ -23,9 +23,8 @@ build_libass() {
 
   (
     cd "$folder"
-    if [[ ! -f configure ]]; then
-      autoreconf -fi
-    fi
+    aclocal
+    autoreconf -fi
     do_configure "./configure" \
       "--prefix=${BUILD_PREFIX}" \
       "--host=${CROSS_PREFIX%-}" \
