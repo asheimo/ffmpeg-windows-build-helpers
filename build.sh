@@ -30,7 +30,7 @@ source "$SCRIPT_DIR/lib/libxml2.sh"
 source "$SCRIPT_DIR/lib/fontconfig.sh"
 source "$SCRIPT_DIR/lib/libass.sh"
 source "$SCRIPT_DIR/lib/nv-codec-headers.sh"
-source "$SCRIPT_DIR/lib/npp-headers.sh"
+source "$SCRIPT_DIR/lib/npp-libs.sh"
 source "$SCRIPT_DIR/lib/x264.sh"
 source "$SCRIPT_DIR/lib/x265.sh"
 source "$SCRIPT_DIR/lib/ffmpeg.sh"
@@ -133,7 +133,7 @@ fi
 # Video codec dependencies
 run_library "nv-codec-headers" build_nv_codec_headers
 if [[ "${FEATURE_NVIDIA_FILTERS}" == "y" ]]; then
-  run_library "npp-headers"      build_npp_headers
+  run_library "npp-libs"         build_npp_libs
 fi
 run_library "x264"             build_x264
 run_library "x265"             build_x265
@@ -154,13 +154,14 @@ check_ffmpeg_dependencies() {
     "x265"
   )
 
-  # NVIDIA GPU filters — npp-headers is headers-only (no .pc or .a files)
+  # NVIDIA GPU filters — npp-libs produces no .pc or .a files of its own
+  # (headers and import libs are installed directly to BUILD_PREFIX, not via make install)
   # so it is excluded from the folder check. Instead verify via touchfile.
   if [[ "${FEATURE_NVIDIA_FILTERS}" == "y" ]]; then
     local npp_touch
-    npp_touch="$(ls "$SCRIPT_DIR/logs/touched/already_installed_npp_headers_"* 2>/dev/null | head -1)"
+    npp_touch="$(ls "$SCRIPT_DIR/logs/touched/already_installed_npp_libs_"* 2>/dev/null | head -1)"
     if [[ -z "$npp_touch" ]]; then
-      missing+=("npp-headers")
+      missing+=("npp-libs")
     fi
   fi
 

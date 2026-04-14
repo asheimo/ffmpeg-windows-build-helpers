@@ -17,7 +17,8 @@ FEATURE_SUBTITLES="n"
 FEATURE_NVIDIA_FILTERS="n"
 FEATURE_NON_FREE="n"
 DRY_RUN="n"
-export FEATURE_SUBTITLES FEATURE_NVIDIA_FILTERS FEATURE_NON_FREE
+BUILD_VERBOSE="y"
+export FEATURE_SUBTITLES FEATURE_NVIDIA_FILTERS FEATURE_NON_FREE BUILD_VERBOSE
 
 # show_help()
 # Prints usage information and exits.
@@ -37,6 +38,7 @@ Options:
                           Note: resulting binary cannot be redistributed
       --dry-run           Show what would be built without running anything
                           Can be combined with any feature flags
+      --quiet             Suppress verbose build output — show only key steps
 
 Feature sets:
   Base (always included)
@@ -102,8 +104,24 @@ print_settings() {
   [[ "$FEATURE_NON_FREE"       == "y" ]] && echo "    Non-free codecs"          || echo "    Non-free codecs           (off)"
 }
 
+# _dry_run_status()
+# Returns " [built]" if a touchfile matching the given glob exists, otherwise "".
+# Only meaningful after at least one successful build run.
+# Usage: _dry_run_status "already_installed_zlib*"
+_dry_run_status() {
+  local glob="$1"
+  local match
+  match="$(ls "$SCRIPT_DIR/logs/touched/"$glob 2>/dev/null | head -1)"
+  if [[ -n "$match" ]]; then
+    echo " [built]"
+  else
+    echo ""
+  fi
+}
+
 # show_dry_run()
 # Prints what would be built without running anything.
+# Each library line shows [built] if its touchfile is present from a prior run.
 show_dry_run() {
   echo ""
   echo "========================================"
@@ -114,29 +132,28 @@ show_dry_run() {
   echo ""
   echo "  Libraries that would be built:"
   echo ""
-  echo "    ffmpeg"
-  echo "        zlib              - lossless data compression"
-  echo "        bzip2             - block-sorting file compression"
-  echo "        nv-codec-headers  - NVIDIA NVENC/NVDEC/CUDA API headers"
-  echo "        x264              - H.264/AVC encoder"
-  echo "        x265              - H.265/HEVC encoder"
+  echo "    ffmpeg  (always re-configured)"
+  echo "        zlib              - lossless data compression$(_dry_run_status "already_installed_zlib*")"
+  echo "        bzip2             - block-sorting file compression$(_dry_run_status "already_installed_bzip2*")"
+  echo "        liblzma           - LZMA/XZ compression$(_dry_run_status "already_installed_xz*")"
+  echo "        nv-codec-headers  - NVIDIA NVENC/NVDEC/CUDA API headers$(_dry_run_status "already_installed_nv_codec_headers*")"
+  echo "        x264              - H.264/AVC encoder$(_dry_run_status "already_installed_x264*")"
+  echo "        x265              - H.265/HEVC encoder$(_dry_run_status "already_ar_merged_x265*")"
   if [[ "$FEATURE_NVIDIA_FILTERS" == "y" ]]; then
     echo ""
-    echo "        npp-headers       - NVIDIA Performance Primitives headers"
-    echo "            (enables GPU-side pixel format conversion for overlay_cuda)"
+    echo "        npp-libs          - NVIDIA Performance Primitives$(_dry_run_status "already_installed_npp_libs*")"
+    echo "            (headers, import libs, DLLs — enables overlay_cuda GPU compositing)"
   fi
   if [[ "$FEATURE_SUBTITLES" == "y" ]]; then
     echo ""
-    echo "        libass            - ASS/SSA and SRT subtitle rendering"
-    echo "            libiconv          - character set conversion"
-    echo "            libpng            - PNG image support"
-    echo "            freetype          - font rendering engine"
-    echo "                libpng        - -> already built for libass"
-    echo "            harfbuzz          - text shaping engine"
-    echo "            fribidi           - Unicode bidirectional algorithm (RTL text support)"
-    echo "            fontconfig        - font discovery and matching"
-    echo "                liblzma       - LZMA/XZ compression"
-    echo "                libxml2       - XML parser"
+    echo "        libass            - ASS/SSA and SRT subtitle rendering$(_dry_run_status "already_installed_libass*")"
+    echo "            libiconv          - character set conversion$(_dry_run_status "already_installed_libiconv*")"
+    echo "            libpng            - PNG image support$(_dry_run_status "already_installed_libpng*")"
+    echo "            freetype          - font rendering engine$(_dry_run_status "already_installed_freetype*")"
+    echo "            harfbuzz          - text shaping engine$(_dry_run_status "already_installed_harfbuzz*")"
+    echo "            fribidi           - Unicode bidirectional algorithm (RTL text support)$(_dry_run_status "already_installed_fribidi*")"
+    echo "            fontconfig        - font discovery and matching$(_dry_run_status "already_installed_fontconfig*")"
+    echo "            libxml2           - XML parser$(_dry_run_status "already_installed_libxml2*")"
   fi
   echo ""
   echo "  ffmpeg configure flags that would be used:"
@@ -173,6 +190,7 @@ show_whiptail_menu() {
   load_settings
 
   # Build pre-check state for each item — "ON" if previously enabled, "OFF" if not
+  # quiet is always OFF — it is a runtime-only flag and never persisted
   local sub_state nvf_state nfr_state dry_state
   sub_state=$([[ "$FEATURE_SUBTITLES"      == "y" ]] && echo "ON" || echo "OFF")
   nvf_state=$([[ "$FEATURE_NVIDIA_FILTERS" == "y" ]] && echo "ON" || echo "OFF")
@@ -186,11 +204,12 @@ show_whiptail_menu() {
   result=$(whiptail \
     --title "ffmpeg-windows-build-helpers" \
     --checklist "Select features to build:\n(Space to toggle, Enter to confirm)" \
-    20 72 4 \
-    "subtitles"      "Text subtitle rendering (SRT, ASS/SSA)"    "$sub_state" \
-    "nvidia-filters" "NVIDIA GPU filters (NPP, GPU compositing) [implies nonfree]"  "$nvf_state" \
-    "non-free"       "Non-free codecs (fdk-aac, decklink)"        "$nfr_state" \
-    "dry-run"        "Preview only — show what would be built"    "$dry_state" \
+    20 72 5 \
+    "subtitles"      "Text subtitle rendering (SRT, ASS/SSA)"                     "$sub_state" \
+    "nvidia-filters" "NVIDIA GPU filters (NPP, GPU compositing) [implies nonfree]" "$nvf_state" \
+    "non-free"       "Non-free codecs (fdk-aac, decklink)"                         "$nfr_state" \
+    "dry-run"        "Preview only — show what would be built"                     "$dry_state" \
+    "quiet"          "Suppress verbose output — show only key steps"               "OFF" \
     3>&1 1>&2 2>&3)
 
   # Exit code 1 means the user pressed Cancel
@@ -205,11 +224,13 @@ show_whiptail_menu() {
   FEATURE_NVIDIA_FILTERS="n"
   FEATURE_NON_FREE="n"
   DRY_RUN="n"
+  BUILD_VERBOSE="y"
 
   [[ "$result" == *'"subtitles"'*      ]] && FEATURE_SUBTITLES="y"
   [[ "$result" == *'"nvidia-filters"'* ]] && FEATURE_NVIDIA_FILTERS="y"
   [[ "$result" == *'"non-free"'*       ]] && FEATURE_NON_FREE="y"
   [[ "$result" == *'"dry-run"'*        ]] && DRY_RUN="y"
+  [[ "$result" == *'"quiet"'*          ]] && BUILD_VERBOSE="n"
 
   # Only save settings if this is not a dry run — dry run is informational only
   if [[ "$DRY_RUN" != "y" ]]; then
@@ -257,6 +278,10 @@ parse_args() {
         DRY_RUN="y"
         shift
         ;;
+      --quiet)
+        BUILD_VERBOSE="n"
+        shift
+        ;;
       *)
         echo "Error: unknown option '$1'"
         echo "Run ./build.sh --help for usage."
@@ -300,6 +325,7 @@ parse_args() {
     # No explicit flags — load from saved settings and confirm
     load_settings
     echo ""
+    echo "  No options specified — loading saved settings from build.cfg"
     print_settings
     echo ""
     read -r -p "  Run with these settings? [Y/n/c(hange)]: " confirm

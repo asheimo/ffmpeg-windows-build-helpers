@@ -16,6 +16,14 @@ HARFBUZZ_SH_LOADED=1
 # Clones or updates HarfBuzz and builds the static library.
 # Version is controlled by HARFBUZZ_VERSION in versions.conf.
 # Skips any step that has already completed successfully.
+#
+# NOTE: Unlike most libraries, HarfBuzz builds inside a build_static
+# subdirectory. This means do_make_and_make_install writes its touchfile
+# as "already_installed_build_static" — a generic name that could collide
+# with any other library using the same subdirectory pattern. To give the
+# dry-run status check a reliable, unambiguous touchfile to key off, we
+# write an explicit "already_installed_harfbuzz_<version>" touchfile here,
+# conditional on do_make_and_make_install succeeding.
 build_harfbuzz() {
   local version="${HARFBUZZ_VERSION:?HARFBUZZ_VERSION not set in versions.conf}"
   local folder="harfbuzz"
@@ -37,7 +45,9 @@ build_harfbuzz() {
          -DHB_BUILD_UTILS=OFF \
          -DHB_BUILD_SUBSET=OFF \
          -DCMAKE_FIND_ROOT_PATH=${BUILD_PREFIX}"
-      do_make_and_make_install
+      if do_make_and_make_install; then
+        touch "$(get_touchfile_name "already_installed_harfbuzz_${version}")"
+      fi
     )
   )
 }
