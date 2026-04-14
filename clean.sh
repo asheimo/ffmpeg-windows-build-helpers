@@ -13,6 +13,7 @@ echo "  build/           (library source trees)"
 echo "  downloads/       (downloaded tarballs and archives)"
 echo "  logs/            (build logs and touchfiles)"
 echo "  cross_compilers/ (llvm-mingw toolchain)"
+echo "  release/         (ffmpeg.exe, ffprobe.exe, runtime DLLs)"
 echo "  build.cfg        (saved feature selections)"
 echo ""
 echo "A full rebuild from scratch will be required afterwards."
@@ -49,6 +50,9 @@ echo "  removed: logs/"
 
 rm -rf "$SCRIPT_DIR/cross_compilers"
 echo "  removed: cross_compilers/"
+
+rm -rf "$SCRIPT_DIR/release"
+echo "  removed: release/"
 
 if [[ -f "$SCRIPT_DIR/build.cfg" ]]; then
   rm -f "$SCRIPT_DIR/build.cfg"

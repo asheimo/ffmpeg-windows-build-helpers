@@ -57,6 +57,14 @@ build_ffmpeg() {
       "--enable-ffnvcodec"
     )
 
+    # NVIDIA GPU filters — NPP headers for GPU-side pixel format conversion.
+    # libnpp is classified as nonfree by ffmpeg so --enable-nonfree is required.
+    if [[ "${FEATURE_NVIDIA_FILTERS:-n}" == "y" ]]; then
+      ffmpeg_flags+=(
+        "--enable-libnpp"
+        "--enable-nonfree"
+      )
+    fi
     # Subtitle rendering flags — only when feature is enabled
     if [[ "${FEATURE_SUBTITLES:-n}" == "y" ]]; then
       ffmpeg_flags+=(

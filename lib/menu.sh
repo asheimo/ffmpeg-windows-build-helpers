@@ -17,6 +17,7 @@ FEATURE_SUBTITLES="n"
 FEATURE_NVIDIA_FILTERS="n"
 FEATURE_NON_FREE="n"
 DRY_RUN="n"
+export FEATURE_SUBTITLES FEATURE_NVIDIA_FILTERS FEATURE_NON_FREE
 
 # show_help()
 # Prints usage information and exits.
@@ -87,6 +88,7 @@ load_settings() {
   if [[ -f "$SETTINGS_FILE" ]]; then
     # shellcheck source=/dev/null
     source "$SETTINGS_FILE"
+    export FEATURE_SUBTITLES FEATURE_NVIDIA_FILTERS FEATURE_NON_FREE
   fi
 }
 
@@ -118,6 +120,11 @@ show_dry_run() {
   echo "        nv-codec-headers  - NVIDIA NVENC/NVDEC/CUDA API headers"
   echo "        x264              - H.264/AVC encoder"
   echo "        x265              - H.265/HEVC encoder"
+  if [[ "$FEATURE_NVIDIA_FILTERS" == "y" ]]; then
+    echo ""
+    echo "        npp-headers       - NVIDIA Performance Primitives headers"
+    echo "            (enables GPU-side pixel format conversion for overlay_cuda)"
+  fi
   if [[ "$FEATURE_SUBTITLES" == "y" ]]; then
     echo ""
     echo "        libass            - ASS/SSA and SRT subtitle rendering"
@@ -138,6 +145,9 @@ show_dry_run() {
   echo "    --enable-libx264 --enable-libx265"
   echo "    --enable-nvenc --enable-nvdec --enable-cuda"
   echo "    --enable-cuvid --enable-cuda-llvm --enable-ffnvcodec"
+  if [[ "$FEATURE_NVIDIA_FILTERS" == "y" ]]; then
+    echo "    --enable-libnpp --enable-nonfree (implied by NVIDIA filters)"
+  fi
   if [[ "$FEATURE_SUBTITLES" == "y" ]]; then
     echo "    --enable-libass --enable-fontconfig"
   fi
@@ -178,7 +188,7 @@ show_whiptail_menu() {
     --checklist "Select features to build:\n(Space to toggle, Enter to confirm)" \
     20 72 4 \
     "subtitles"      "Text subtitle rendering (SRT, ASS/SSA)"    "$sub_state" \
-    "nvidia-filters" "NVIDIA GPU filters (NPP, GPU compositing)"  "$nvf_state" \
+    "nvidia-filters" "NVIDIA GPU filters (NPP, GPU compositing) [implies nonfree]"  "$nvf_state" \
     "non-free"       "Non-free codecs (fdk-aac, decklink)"        "$nfr_state" \
     "dry-run"        "Preview only — show what would be built"    "$dry_state" \
     3>&1 1>&2 2>&3)

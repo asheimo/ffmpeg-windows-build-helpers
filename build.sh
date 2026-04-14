@@ -30,6 +30,7 @@ source "$SCRIPT_DIR/lib/libxml2.sh"
 source "$SCRIPT_DIR/lib/fontconfig.sh"
 source "$SCRIPT_DIR/lib/libass.sh"
 source "$SCRIPT_DIR/lib/nv-codec-headers.sh"
+source "$SCRIPT_DIR/lib/npp-headers.sh"
 source "$SCRIPT_DIR/lib/x264.sh"
 source "$SCRIPT_DIR/lib/x265.sh"
 source "$SCRIPT_DIR/lib/ffmpeg.sh"
@@ -131,6 +132,9 @@ fi
 
 # Video codec dependencies
 run_library "nv-codec-headers" build_nv_codec_headers
+if [[ "${FEATURE_NVIDIA_FILTERS}" == "y" ]]; then
+  run_library "npp-headers"      build_npp_headers
+fi
 run_library "x264"             build_x264
 run_library "x265"             build_x265
 
@@ -149,6 +153,16 @@ check_ffmpeg_dependencies() {
     "x264"
     "x265"
   )
+
+  # NVIDIA GPU filters — npp-headers is headers-only (no .pc or .a files)
+  # so it is excluded from the folder check. Instead verify via touchfile.
+  if [[ "${FEATURE_NVIDIA_FILTERS}" == "y" ]]; then
+    local npp_touch
+    npp_touch="$(ls "$SCRIPT_DIR/logs/touched/already_installed_npp_headers_"* 2>/dev/null | head -1)"
+    if [[ -z "$npp_touch" ]]; then
+      missing+=("npp-headers")
+    fi
+  fi
 
   # Subtitle rendering stack — only checked when feature is enabled
   if [[ "${FEATURE_SUBTITLES}" == "y" ]]; then
@@ -194,6 +208,12 @@ echo "========================================"
 echo "  Build complete"
 echo "========================================"
 echo ""
-FFMPEG_WIN_PATH="$(echo "${BUILD_PREFIX}/bin/ffmpeg.exe" | sed 's|/mnt/c/|C:\\|; s|/|\\|g')"
-echo "  To verify: \"${FFMPEG_WIN_PATH}\" -version"
+
+# Copy ffmpeg.exe and ffprobe.exe to release folder
+mkdir -p "$SCRIPT_DIR/release"
+cp "${BUILD_PREFIX}/bin/ffmpeg.exe" "$SCRIPT_DIR/release/" 2>/dev/null || true
+cp "${BUILD_PREFIX}/bin/ffprobe.exe" "$SCRIPT_DIR/release/" 2>/dev/null || true
+
+RELEASE_WIN_PATH="$(echo "$SCRIPT_DIR/release/ffmpeg.exe" | sed 's|/mnt/c/|C:\\|; s|/|\\|g')"
+echo "  To verify: \"${RELEASE_WIN_PATH}\" -version"
 echo ""
